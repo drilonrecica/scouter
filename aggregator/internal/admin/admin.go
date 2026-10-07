@@ -7,6 +7,7 @@
 package admin
 
 import (
+	"bytes"
 	"cmp"
 	"crypto/rand"
 	"crypto/sha256"
@@ -16,10 +17,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -66,7 +70,13 @@ type Config struct {
 	Status   func() Status
 	Secrets  []Secret
 	Log      *slog.Logger
+	// APKPath is where an uploaded APK is stored for over-the-air updates;
+	// empty disables the App page.
+	APKPath string
 }
+
+// maxAPK bounds uploads; the Scouter APK is well under 1 MB.
+const maxAPK = 30 << 20
 
 type session struct {
 	csrf    string
@@ -106,7 +116,7 @@ func New(cfg Config) http.Handler {
 	}
 	u := &ui{cfg: cfg, digest: sha256.Sum256([]byte(cfg.Password)), now: time.Now, sessions: map[string]*session{}, pages: map[string]*template.Template{}}
 	u.login = template.Must(template.ParseFS(web, "web/login.html"))
-	for _, p := range []string{"status", "projects", "phone"} {
+	for _, p := range []string{"status", "projects", "phone", "app"} {
 		u.pages[p] = template.Must(template.ParseFS(web, "web/layout.html", "web/"+p+".html"))
 	}
 
@@ -124,6 +134,10 @@ func New(cfg Config) http.Handler {
 	mux.Handle("POST /admin/projects", u.authed(u.saveProjects))
 	mux.Handle("GET /admin/phone", u.authed(u.phonePage))
 	mux.Handle("POST /admin/phone", u.authed(u.savePhone))
+	if cfg.APKPath != "" {
+		mux.Handle("GET /admin/app", u.authed(u.appPage))
+		mux.Handle("POST /admin/app", u.authed(u.uploadAPK))
+	}
 	mux.Handle("GET /admin", http.RedirectHandler("/admin/", http.StatusSeeOther))
 	return secure(mux)
 }
@@ -182,11 +196,18 @@ func (u *ui) authed(h authedHandler) http.Handler {
 			return
 		}
 		if r.Method == http.MethodPost {
+			r.Body = http.MaxBytesReader(w, r.Body, maxAPK+1<<20)
 			if !sameOrigin(r) {
 				http.Error(w, "cross-origin request refused", http.StatusForbidden)
 				return
 			}
-			if err := r.ParseForm(); err != nil {
+			// ParseForm ignores multipart bodies, which would leave the CSRF
+			// field of the APK upload empty: parse those as multipart.
+			parse := r.ParseForm
+			if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+				parse = func() error { return r.ParseMultipartForm(4 << 20) } // larger parts spill to disk
+			}
+			if err := parse(); err != nil {
 				http.Error(w, "bad form", http.StatusBadRequest)
 				return
 			}
@@ -344,10 +365,93 @@ func (u *ui) statusPage(w http.ResponseWriter, _ *http.Request, _ string, s *ses
 	if !status.LastPoll.IsZero() && status.LastPoll.Unix() > 0 {
 		last = fmt.Sprintf("%ds ago", int(u.now().Sub(status.LastPoll).Seconds()))
 	}
-	u.render(w, s, "status", "status", map[string]any{
+	data := map[string]any{
 		"Version": st.Version, "Bytes": len(b), "Clients": status.Clients, "Rate": status.Rate, "LastPoll": last,
 		"Projects": len(st.Projects), "Alerts": len(st.Alerts), "Sources": sources, "Secrets": u.cfg.Secrets,
-	})
+	}
+	if h := u.cfg.Store.Heartbeat(); h != nil {
+		ago := u.now().Sub(h.At)
+		data["Phone"] = h
+		data["PhoneSeen"] = humanize(ago) + " ago"
+		data["PhoneSilent"] = ago > 5*time.Minute
+		data["PhoneHot"] = h.TempC > 45
+		data["PhoneMB"] = float64(h.PssKB) / 1024
+		data["PhoneUptime"] = humanize(time.Duration(h.UptimeS) * time.Second)
+	}
+	u.render(w, s, "status", "status", data)
+}
+
+func humanize(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+func (u *ui) appPage(w http.ResponseWriter, _ *http.Request, _ string, s *session) {
+	data := map[string]any{"Phone": u.cfg.Store.Heartbeat()}
+	if a := u.cfg.Store.Get().App; a != nil {
+		data["App"] = map[string]any{"Short": a.SHA256[:12], "SizeKB": a.Size / 1024, "Uploaded": a.UploadedAt.Format("2006-01-02 15:04 UTC")}
+	}
+	u.render(w, s, "app", "app", data)
+}
+
+// uploadAPK stores an APK for the phone. Only shape is checked here (size,
+// ZIP magic): the phone's package installer verifies signature and version.
+func (u *ui) uploadAPK(w http.ResponseWriter, r *http.Request, _ string, s *session) {
+	f, hdr, err := r.FormFile("apk")
+	if err != nil {
+		u.setFlash(s, false, "No file received.")
+		http.Redirect(w, r, "/admin/app", http.StatusSeeOther)
+		return
+	}
+	defer f.Close()
+	head := make([]byte, 4)
+	if _, err := io.ReadFull(f, head); err != nil || string(head) != "PK\x03\x04" || hdr.Size > maxAPK {
+		u.setFlash(s, false, "Not an APK (expected a ZIP file under 30 MB).")
+		http.Redirect(w, r, "/admin/app", http.StatusSeeOther)
+		return
+	}
+	if err := saveUpload(u.cfg.APKPath, io.MultiReader(bytes.NewReader(head), f)); err != nil {
+		u.setFlash(s, false, "Could not store the APK: "+err.Error())
+		http.Redirect(w, r, "/admin/app", http.StatusSeeOther)
+		return
+	}
+	rel, err := state.DescribeAPK(u.cfg.APKPath)
+	if err != nil {
+		u.setFlash(s, false, "Stored, but could not hash it: "+err.Error())
+		http.Redirect(w, r, "/admin/app", http.StatusSeeOther)
+		return
+	}
+	u.cfg.Store.SetApp(rel)
+	u.cfg.Log.Info("apk uploaded", "sha256", rel.SHA256, "bytes", rel.Size, "ip", clientIP(r))
+	u.setFlash(s, true, "Uploaded. The phone installs it within a minute.")
+	http.Redirect(w, r, "/admin/app", http.StatusSeeOther)
+}
+
+func saveUpload(path string, src io.Reader) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(tmp, src); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 type projectRow struct {

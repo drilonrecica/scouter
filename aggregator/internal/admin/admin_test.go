@@ -1,12 +1,15 @@
 package admin
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -207,5 +210,48 @@ func TestLogout(t *testing.T) {
 	post(t, c, srv, "/admin/logout", url.Values{"csrf": {csrf}}, srv.URL)
 	if resp, _ := get(t, c, srv, "/admin/"); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("after logout: %d", resp.StatusCode)
+	}
+}
+
+func TestAPKUpload(t *testing.T) {
+	store := state.NewStore("")
+	apk := t.TempDir() + "/app/scouter.apk"
+	h := New(Config{Password: pw, Store: store, APKPath: apk, Status: func() Status { return Status{} }, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	c, csrf := login(t, srv)
+
+	upload := func(content []byte, token string) {
+		var body bytes.Buffer
+		mw := multipart.NewWriter(&body)
+		mw.WriteField("csrf", token)
+		fw, _ := mw.CreateFormFile("apk", "scouter.apk")
+		fw.Write(content)
+		mw.Close()
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/admin/app", &body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.Header.Set("Origin", srv.URL)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+
+	upload([]byte("PK\x03\x04payload"), "wrong-csrf")
+	if store.Get().App != nil {
+		t.Fatal("upload without a valid CSRF token was accepted")
+	}
+	upload([]byte("<html>not an apk"), csrf)
+	if _, body := get(t, c, srv, "/admin/app"); store.Get().App != nil || !strings.Contains(body, "Not an APK") {
+		t.Fatalf("non-APK accepted: app=%+v body=%.600s", store.Get().App, body)
+	}
+	upload([]byte("PK\x03\x04payload"), csrf)
+	app := store.Get().App
+	if app == nil || len(app.SHA256) != 64 || app.Size != 11 {
+		t.Fatalf("app = %+v", app)
+	}
+	if b, _ := os.ReadFile(apk); string(b) != "PK\x03\x04payload" {
+		t.Fatalf("stored = %q", b)
 	}
 }

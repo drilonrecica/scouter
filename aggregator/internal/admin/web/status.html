@@ -8,6 +8,20 @@
   <div class="stat"><div class="label">PROJECTS</div><div class="value">{{.Data.Projects}}</div><div class="hint">{{.Data.Alerts}} open alert(s)</div></div>
 </div>
 
+<h1>Phone</h1>
+<div class="panel">
+  {{with .Data.Phone}}
+  <div class="grid">
+    <div class="stat"><div class="label">LAST SEEN</div><div class="value {{if $.Data.PhoneSilent}}bad{{else}}ok{{end}}">{{$.Data.PhoneSeen}}</div></div>
+    <div class="stat"><div class="label">BATTERY</div><div class="value">{{.Battery}}%</div><div class="hint">{{if .Charging}}charging{{else}}holding (charge limit){{end}}</div></div>
+    <div class="stat"><div class="label">TEMPERATURE</div><div class="value {{if $.Data.PhoneHot}}bad{{end}}">{{printf "%.1f" .TempC}} °C</div></div>
+    <div class="stat"><div class="label">APP</div><div class="value">{{.AppVersion}}</div><div class="hint">{{printf "%.1f" $.Data.PhoneMB}} MB RAM</div></div>
+    <div class="stat"><div class="label">KIOSK</div><div class="value">{{if .LockTask}}locked{{else}}off{{end}}</div><div class="hint">device owner: {{if .DeviceOwner}}yes{{else}}no{{end}}</div></div>
+    <div class="stat"><div class="label">WI-FI</div><div class="value">{{.WifiRSSI}} dBm</div><div class="hint">up {{$.Data.PhoneUptime}}</div></div>
+  </div>
+  {{else}}<p class="muted">The phone has not reported yet (app 0.3 or newer reports every minute).</p>{{end}}
+</div>
+
 <h1>Sources</h1>
 <div class="panel">
   <table>

@@ -15,6 +15,7 @@
     <a href="/admin/" {{if eq .Page "status"}}class="on"{{end}}>STATUS</a>
     <a href="/admin/projects" {{if eq .Page "projects"}}class="on"{{end}}>PROJECTS</a>
     <a href="/admin/phone" {{if eq .Page "phone"}}class="on"{{end}}>PHONE</a>
+    <a href="/admin/app" {{if eq .Page "app"}}class="on"{{end}}>APP</a>
   </nav>
   <form method="post" action="/admin/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">log out</button></form>
 </header>

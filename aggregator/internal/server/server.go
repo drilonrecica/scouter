@@ -19,8 +19,9 @@ var Heartbeat = 25 * time.Second
 
 // Server is the phone-facing API. Mount extra handlers (the admin UI) with Handle.
 type Server struct {
-	mux     *http.ServeMux
-	clients atomic.Int64
+	mux        *http.ServeMux
+	clients    atomic.Int64
+	phoneToken string
 }
 
 // New returns the server. phoneToken guards everything but /healthz.
@@ -30,7 +31,30 @@ func New(store *state.Store, phoneToken string) *Server {
 	s.mux.Handle("GET /v1/state", requireToken(phoneToken, getState(store)))
 	s.mux.Handle("GET /v1/stream", requireToken(phoneToken, s.stream(store)))
 	s.mux.Handle("PUT /v1/settings", requireToken(phoneToken, putSettings(store)))
+	s.mux.Handle("POST /v1/heartbeat", requireToken(phoneToken, postHeartbeat(store)))
+	s.phoneToken = phoneToken
 	return s
+}
+
+// ServeAPK lets the phone download the APK at path for over-the-air updates.
+func (s *Server) ServeAPK(path string) {
+	s.mux.Handle("GET /v1/app.apk", requireToken(s.phoneToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeFile(w, r, path)
+	})))
+}
+
+func postHeartbeat(store *state.Store) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var h state.Heartbeat
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&h); err != nil {
+			http.Error(w, "bad heartbeat: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		store.SetHeartbeat(h)
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }

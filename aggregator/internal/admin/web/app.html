@@ -1,0 +1,19 @@
+{{template "top" .}}
+<h1>App (over-the-air update)</h1>
+<div class="panel">
+  {{with .Data.App}}
+  <p>Offered to the phone: <span class="ok">sha256 {{.Short}}</span> · {{.SizeKB}} KB · uploaded {{.Uploaded}}</p>
+  {{else}}
+  <p class="muted">No APK uploaded. The phone keeps what it has.</p>
+  {{end}}
+  {{with .Data.Phone}}<p class="hint">Phone runs {{.AppVersion}} ({{.VersionCode}}){{with .LastOTA}} · last update: {{.}}{{end}}</p>{{end}}
+</div>
+<form method="post" action="/admin/app" enctype="multipart/form-data">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<div class="panel">
+  <p class="hint">Upload a release APK signed with the same key as the installed app, with a higher versionCode. The phone downloads it within a minute and installs it silently (it is device owner). Android rejects other keys and downgrades.</p>
+  <label class="row"><span>APK file</span><input type="file" name="apk" accept=".apk,application/vnd.android.package-archive" required></label>
+</div>
+<button>UPLOAD</button>
+</form>
+{{template "bottom" .}}

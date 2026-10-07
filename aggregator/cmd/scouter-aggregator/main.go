@@ -56,6 +56,11 @@ func run(log *slog.Logger) error {
 		store.UseSettingsFile(settingsFile)
 	}
 	reportStorage(store, dataDir, log)
+	store.UsePhoneFiles(filepath.Join(dataDir, "phone.json"))
+	apkPath := filepath.Join(dataDir, "app", "scouter.apk")
+	if rel, err := state.DescribeAPK(apkPath); err == nil {
+		store.SetApp(rel) // keep offering the last upload across restarts
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -72,11 +77,13 @@ func run(log *slog.Logger) error {
 	}
 
 	api := server.New(store, phoneToken)
+	api.ServeAPK(apkPath)
 	adminPassword := os.Getenv("SCOUTER_ADMIN_PASSWORD")
 	isSet := func(k string) bool { return os.Getenv(k) != "" }
 	ui := admin.New(admin.Config{
 		Password: adminPassword,
 		Store:    store,
+		APKPath:  apkPath,
 		Log:      log,
 		Status: func() admin.Status {
 			return admin.Status{Clients: api.Clients(), Rate: gh.RateRemaining(), LastPoll: poller.LastPoll()}

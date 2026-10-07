@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -148,5 +150,38 @@ func TestPutSettings(t *testing.T) {
 	}
 	if !store.Settings().Kiosk {
 		t.Fatal("a rejected update changed the stored settings")
+	}
+}
+
+func TestHeartbeatAndAPK(t *testing.T) {
+	store := state.NewStore("")
+	api := New(store, "secret")
+	apk := t.TempDir() + "/scouter.apk"
+	os.WriteFile(apk, []byte("PK\x03\x04fake"), 0o600)
+	api.ServeAPK(apk)
+	srv := httptest.NewServer(api)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/heartbeat", strings.NewReader(`{"battery":68,"temp_c":31.5,"lock_task":true,"future_field":1}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := srv.Client().Do(req)
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("heartbeat: %v %v", err, resp.StatusCode)
+	}
+	if h := store.Heartbeat(); h == nil || h.Battery != 68 || !h.LockTask || h.At.IsZero() {
+		t.Fatalf("heartbeat = %+v", h)
+	}
+	v := store.Get().Version
+	if store.Get().Version != v {
+		t.Fatal("a heartbeat must not change the state document")
+	}
+
+	if resp := get(t, srv, "/v1/app.apk", "", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("apk without token: %d", resp.StatusCode)
+	}
+	resp = get(t, srv, "/v1/app.apk", "secret", nil)
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(string(b), "PK") {
+		t.Fatalf("apk: %d %q", resp.StatusCode, b)
 	}
 }

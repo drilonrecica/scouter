@@ -111,4 +111,6 @@ type State struct {
 	// Available lists every trackable repo (hidden ones excluded): the
 	// pickers in the admin UI and on the phone choose from it.
 	Available []string `json:"available"`
+	// App is the APK the phone should be running; it updates itself when the hash differs.
+	App *AppRelease `json:"app,omitempty"`
 }

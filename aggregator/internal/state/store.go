@@ -24,6 +24,7 @@ type Inputs struct {
 	Available []string // every trackable repo, for the settings pickers
 	Settings  Settings
 	Deploys   map[string]Deploy // by project FullName, from Coolify
+	App       *AppRelease       // APK offered for over-the-air update
 }
 
 // Store owns the inputs, derives the published State and fans changes out to subscribers.
@@ -36,6 +37,9 @@ type Store struct {
 	snapshot string // file path, empty = no persistence
 	settings string // settings file path, empty = no persistence
 	now      func() time.Time
+
+	heartbeat     *Heartbeat
+	heartbeatFile string
 }
 
 // NewStore restores the last snapshot from snapshotPath if there is one.
@@ -185,7 +189,7 @@ func derive(in Inputs, now time.Time) State {
 	}
 
 	available := slices.DeleteFunc(slices.Clone(in.Available), in.Settings.IsHidden)
-	st := State{Projects: projects, Alerts: []Alert{}, Sources: in.Sources, Settings: in.Settings, Available: available}
+	st := State{Projects: projects, Alerts: []Alert{}, Sources: in.Sources, Settings: in.Settings, Available: available, App: in.App}
 	if len(projects) > 0 {
 		st.Focus = projects[0].FullName
 	}
