@@ -1,0 +1,5 @@
+# Scouter: keep the battery at ~60-70% while permanently on USB power (Samsung retail "store mode").
+# init itself may not write battery sysfs (SELinux), so run the write in the userdebug su domain.
+# Remove this file to restore normal charging.
+on property:sys.boot_completed=1
+    exec_background u:r:su:s0 root root -- /system/bin/sh -c "echo 1 > /sys/class/power_supply/battery/store_mode"

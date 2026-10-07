@@ -1,0 +1,79 @@
+// Package state holds the single document the phone renders. Sources write
+// into it through Store.Update; the server streams it out on every change.
+package state
+
+import "time"
+
+// CIStatus is the combined result of all workflow runs for one commit.
+type CIStatus string
+
+const (
+	CIRunning   CIStatus = "running"
+	CISuccess   CIStatus = "success"
+	CIFailure   CIStatus = "failure"
+	CICancelled CIStatus = "cancelled"
+)
+
+// Run is the CI result for one commit, combined across its workflows.
+type Run struct {
+	Status    CIStatus  `json:"status"`
+	Branch    string    `json:"branch"`
+	SHA       string    `json:"sha"`
+	Title     string    `json:"title"`
+	Workflow  string    `json:"workflow"` // the failing workflow if any, else the first one
+	StartedAt time.Time `json:"started_at"`
+	// DurationS is set once the run has finished; while running, the phone
+	// counts up from StartedAt itself so the aggregator need not tick.
+	DurationS int    `json:"duration_s,omitempty"`
+	URL       string `json:"url"`
+}
+
+// Project is one repository, as shown in Focus and Grid.
+type Project struct {
+	Name          string    `json:"name"`
+	FullName      string    `json:"full_name"`
+	DefaultBranch string    `json:"default_branch"`
+	PushedAt      time.Time `json:"pushed_at"`
+	// CI is the newest commit on the default branch: the one that matters for deploys.
+	CI *Run `json:"ci,omitempty"`
+	// Latest is the newest commit on any other branch, when it is newer than CI.
+	Latest  *Run `json:"latest,omitempty"`
+	OpenPRs int  `json:"open_prs"`
+}
+
+// LastActivity is what Grid sorts by and what auto-Focus follows.
+func (p Project) LastActivity() time.Time {
+	t := p.PushedAt
+	for _, r := range []*Run{p.CI, p.Latest} {
+		if r != nil && r.StartedAt.After(t) {
+			t = r.StartedAt
+		}
+	}
+	return t
+}
+
+// Alert is something worth taking over the screen for. IDs are stable so the
+// phone can remember which ones were dismissed.
+type Alert struct {
+	ID      string    `json:"id"`
+	Kind    string    `json:"kind"`
+	Project string    `json:"project"`
+	Text    string    `json:"text"`
+	At      time.Time `json:"at"`
+}
+
+// Source reports whether an upstream is healthy, so the phone can show stale data as stale.
+type Source struct {
+	OK        bool      `json:"ok"`
+	Error     string    `json:"error,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// State is the whole document. Version increases on every change and doubles as ETag.
+type State struct {
+	Version  int64             `json:"version"`
+	Focus    string            `json:"focus"`
+	Projects []Project         `json:"projects"`
+	Alerts   []Alert           `json:"alerts"`
+	Sources  map[string]Source `json:"sources"`
+}
