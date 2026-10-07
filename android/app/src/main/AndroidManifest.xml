@@ -12,7 +12,7 @@
         android:label="Scouter"
         android:icon="@drawable/ic_scouter"
         android:allowBackup="false"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
 
         <activity
@@ -38,6 +38,12 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <!-- adb shell holds DUMP; third-party apps cannot obtain it. -->
+        <receiver
+            android:name=".ConfigReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

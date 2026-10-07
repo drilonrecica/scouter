@@ -67,11 +67,18 @@ adb shell settings put global stay_on_while_plugged_in 0            # the app ke
 adb shell locksettings set-disabled true                            # no lock screen in front of alerts
 
 # configure (quote the schedule: it contains a space)
-adb shell "am start -n dev.recica.scouter/.DashboardActivity --es url https://scouter.example.com --es token SECRET --es schedule '1-5 09:00-19:00'"
+adb shell "am broadcast -n dev.recica.scouter/.ConfigReceiver --es url https://scouter.example.com --es token SECRET --es schedule '1-5 09:00-19:00'"
+adb shell am start -n dev.recica.scouter/.DashboardActivity
 ```
 
+Configuration is accepted only from adb: the receiver requires
+`android.permission.DUMP`, which other apps cannot hold, so no app on the
+phone can redirect it to a server of its own and collect the token. A new
+`url` is only accepted together with a `token`. Plain HTTP is allowed only
+for `127.0.0.1`/`localhost`; everything else must be HTTPS.
+
 For development against a local aggregator: `adb reverse tcp:8787 tcp:8787`
-and use `--es url http://127.0.0.1:8787`.
+and configure `--es url http://127.0.0.1:8787` (with its token).
 
 ### Other phones?
 

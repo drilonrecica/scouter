@@ -18,8 +18,8 @@ import kotlin.math.abs
 import kotlin.random.Random
 
 /**
- * Full-screen kiosk. Configure over adb:
- *   adb shell am start -n dev.recica.scouter/.DashboardActivity --es url https://… --es token … [--es schedule "1-5 09:00-19:00"]
+ * Full-screen kiosk; configuration arrives through [ConfigReceiver], never
+ * through this exported activity's intent.
  * Swipe left/right: Focus ⇄ Grid. Long-press in Focus: pin/unpin. Tap a tile: focus it. Tap an alert: dismiss.
  */
 class DashboardActivity : Activity() {
@@ -50,7 +50,6 @@ class DashboardActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
-        configure(intent)
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         view = DashboardView(this)
@@ -65,17 +64,7 @@ class DashboardActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setTurnScreenOn(true)
-        if (configure(intent)) StreamService.start(this)
         view.invalidate()
-    }
-
-    /** Applies adb-provided settings; returns true if anything changed. */
-    private fun configure(i: Intent?): Boolean {
-        var changed = false
-        i?.getStringExtra("url")?.let { prefs.url = it; changed = true }
-        i?.getStringExtra("token")?.let { prefs.token = it; changed = true }
-        i?.getStringExtra("schedule")?.let { prefs.schedule = it; changed = true }
-        return changed
     }
 
     override fun onResume() {
@@ -162,6 +151,32 @@ class DashboardActivity : Activity() {
 
 /** Device admin, used only for lockNow() to switch the screen off outside the schedule. */
 class AdminReceiver : DeviceAdminReceiver()
+
+/**
+ * Configuration over adb only:
+ *   adb shell am broadcast -n dev.recica.scouter/.ConfigReceiver --es url https://… --es token … [--es schedule "1-5 09:00-19:00"]
+ * The manifest guards it with android.permission.DUMP, which the adb shell
+ * holds and ordinary apps cannot get; otherwise any app could point the
+ * phone at its own server and collect the bearer token.
+ */
+class ConfigReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        val prefs = Prefs(ctx)
+        val url = intent.getStringExtra("url")
+        val token = intent.getStringExtra("token")
+        // A new server only together with its own token: never send the
+        // current token to a URL that arrived without one.
+        if (url != null && token == null) {
+            resultData = "rejected: url needs a token in the same broadcast"
+            return
+        }
+        url?.let { prefs.url = it }
+        token?.let { prefs.token = it }
+        intent.getStringExtra("schedule")?.let { prefs.schedule = it }
+        resultData = "ok"
+        StreamService.start(ctx)
+    }
+}
 
 /** Brings the dashboard back after a reboot. */
 class BootReceiver : BroadcastReceiver() {
