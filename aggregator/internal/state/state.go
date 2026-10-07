@@ -79,4 +79,8 @@ type State struct {
 	Projects []Project         `json:"projects"`
 	Alerts   []Alert           `json:"alerts"`
 	Sources  map[string]Source `json:"sources"`
+	Settings Settings          `json:"settings"`
+	// Available lists every trackable repo (hidden ones excluded): the
+	// pickers in the admin UI and on the phone choose from it.
+	Available []string `json:"available"`
 }

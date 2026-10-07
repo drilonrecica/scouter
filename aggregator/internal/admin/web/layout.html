@@ -1,0 +1,27 @@
+{{define "top"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Scouter · {{.Title}}</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+<header>
+  <span class="brand">◤ SCOUTER</span>
+  <nav>
+    <a href="/admin/" {{if eq .Page "status"}}class="on"{{end}}>STATUS</a>
+    <a href="/admin/projects" {{if eq .Page "projects"}}class="on"{{end}}>PROJECTS</a>
+    <a href="/admin/phone" {{if eq .Page "phone"}}class="on"{{end}}>PHONE</a>
+  </nav>
+  <form method="post" action="/admin/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">log out</button></form>
+</header>
+<main>
+{{with .Flash}}<div class="flash {{if .OK}}ok{{else}}bad{{end}}">{{.Text}}</div>{{end}}
+{{end}}
+
+{{define "bottom"}}</main>
+</body>
+</html>{{end}}

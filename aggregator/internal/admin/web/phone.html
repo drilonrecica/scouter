@@ -1,0 +1,35 @@
+{{template "top" .}}
+<h1>Phone</h1>
+<form method="post" action="/admin/phone">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+{{with .Data.S}}
+<div class="panel">
+  <h1>Focus</h1>
+  <label class="row"><span>Mode</span>
+    <select name="focus_mode">
+      <option value="latest" {{if eq .FocusMode "latest"}}selected{{end}}>Latest push</option>
+      <option value="pinned" {{if eq .FocusMode "pinned"}}selected{{end}}>Pinned project</option>
+      <option value="rotate" {{if eq .FocusMode "rotate"}}selected{{end}}>Rotate favorites</option>
+    </select></label>
+  <label class="row"><span>Pinned project</span>
+    <select name="pinned"><option value="">—</option>{{range $.Data.Repos}}<option value="{{.}}" {{if eq . $.Data.S.Pinned}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label class="row"><span>Rotate every (minutes)</span><input type="number" name="rotate_minutes" min="1" max="60" value="{{.RotateMinutes}}"></label>
+</div>
+<div class="panel">
+  <h1>Screen</h1>
+  <label class="row"><span>Days (1 = Monday)</span>
+    <input type="number" name="day_from" min="1" max="7" value="{{$.Data.DayFrom}}"> to <input type="number" name="day_to" min="1" max="7" value="{{$.Data.DayTo}}"></label>
+  <label class="row"><span>On from</span><input type="time" name="on" value="{{.Schedule.On}}" required> until <input type="time" name="off" value="{{.Schedule.Off}}" required></label>
+  <label class="row"><span>Kiosk mode</span><input type="checkbox" name="kiosk" {{if .Kiosk}}checked{{end}}><span class="hint">Locks the phone into Scouter (needs device owner). The screen still sleeps outside the hours above.</span></label>
+  <label class="row"><span>Alerts for failures younger than (hours)</span><input type="number" name="alert_hours" min="1" max="72" value="{{.AlertHours}}"></label>
+</div>
+<div class="panel">
+  <h1>Background</h1>
+  <label class="row"><span>Ki aura</span><input type="checkbox" name="aura" {{if .Background.Aura}}checked{{end}}><span class="hint">Edge glow in the overall status colour</span></label>
+  <label class="row"><span>Star field</span><input type="checkbox" name="stars" {{if .Background.Stars}}checked{{end}}><span class="hint">Re-seeded every minute</span></label>
+  <label class="row"><span>Hex lens mesh</span><input type="checkbox" name="mesh" {{if .Background.Mesh}}checked{{end}}></label>
+</div>
+{{end}}
+<button>SAVE</button>
+</form>
+{{template "bottom" .}}

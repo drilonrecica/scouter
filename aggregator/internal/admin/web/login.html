@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Scouter · log in</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+<main class="login">
+  <div class="panel">
+    <h1>◤ Scouter admin</h1>
+    {{with .Error}}<div class="flash bad">{{.}}</div>{{end}}
+    <form method="post" action="/admin/login">
+      <input type="text" name="username" value="admin" autocomplete="username" hidden>
+      <label for="password" class="hint">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+      <button>SCAN ▸ LOG IN</button>
+    </form>
+  </div>
+</main>
+</body>
+</html>

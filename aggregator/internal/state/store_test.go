@@ -134,7 +134,7 @@ func TestSnapshotRestoresProjectsAndVersion(t *testing.T) {
 
 func TestOldFailuresDoNotAlert(t *testing.T) {
 	s := newTestStore(t, "")
-	stale := project("stale", int(AlertWindow/time.Minute)+1, CIFailure)
+	stale := project("stale", int(DefaultSettings().AlertWindow()/time.Minute)+1, CIFailure)
 	s.Update(func(in *Inputs) { in.Projects[stale.FullName] = stale })
 	st := s.Get()
 	if len(st.Alerts) != 0 {

@@ -1,0 +1,26 @@
+{{template "top" .}}
+<h1>Status</h1>
+<div class="panel grid">
+  <div class="stat"><div class="label">DOCUMENT</div><div class="value">v{{.Data.Version}}</div><div class="hint">{{.Data.Bytes}} bytes</div></div>
+  <div class="stat"><div class="label">PHONES CONNECTED</div><div class="value {{if eq .Data.Clients 0}}bad{{else}}ok{{end}}">{{.Data.Clients}}</div></div>
+  <div class="stat"><div class="label">GITHUB RATE LEFT</div><div class="value">{{if lt .Data.Rate 0}}—{{else}}{{.Data.Rate}}{{end}}</div><div class="hint">of 5000 / hour</div></div>
+  <div class="stat"><div class="label">LAST POLL</div><div class="value">{{.Data.LastPoll}}</div></div>
+  <div class="stat"><div class="label">PROJECTS</div><div class="value">{{.Data.Projects}}</div><div class="hint">{{.Data.Alerts}} open alert(s)</div></div>
+</div>
+
+<h1>Sources</h1>
+<div class="panel">
+  <table>
+    <tr><th>SOURCE</th><th>STATE</th><th>SINCE</th></tr>
+    {{range .Data.Sources}}<tr><td>{{.Name}}</td><td class="{{if .OK}}ok{{else}}bad{{end}}">{{if .OK}}ok{{else}}{{.Error}}{{end}}</td><td class="muted">{{.Since}}</td></tr>{{else}}<tr><td colspan="3" class="muted">no data yet</td></tr>{{end}}
+  </table>
+</div>
+
+<h1>Secrets</h1>
+<div class="panel">
+  <p class="hint">Secrets live in environment variables only. This page shows whether they are set, never their values.</p>
+  <table>
+    {{range .Data.Secrets}}<tr><td>{{.Name}}</td><td class="{{if .Set}}ok{{else}}warn{{end}}">{{if .Set}}✓ set{{else}}✗ not set{{end}}</td><td class="muted">{{.Purpose}}</td></tr>{{end}}
+  </table>
+</div>
+{{template "bottom" .}}

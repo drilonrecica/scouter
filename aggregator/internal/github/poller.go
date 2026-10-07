@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/drilonrecica/scouter/aggregator/internal/state"
@@ -49,7 +51,11 @@ type Poller struct {
 
 	nextList time.Time
 	repos    map[string]*tracked
+	lastStep atomic.Int64 // unix seconds of the last completed poll step
 }
+
+// LastPoll is when the poller last finished a step, for the admin status page.
+func (p *Poller) LastPoll() time.Time { return time.Unix(p.lastStep.Load(), 0).UTC() }
 
 func NewPoller(c *Client, store *state.Store, ignore []string, log *slog.Logger) *Poller {
 	ig := map[string]bool{}
@@ -94,6 +100,7 @@ func (p *Poller) step(ctx context.Context) {
 			err = p.pollPulls(ctx, t)
 		}
 	}
+	p.lastStep.Store(p.now().Unix())
 	src := state.Source{OK: err == nil, UpdatedAt: now}
 	if err != nil {
 		src.Error = err.Error()
@@ -116,10 +123,42 @@ func (p *Poller) listRepos(ctx context.Context) error {
 	if err := p.c.get(ctx, fmt.Sprintf("/user/repos?affiliation=owner&sort=pushed&per_page=%d", listedRepos), &repos); err != nil {
 		return err
 	}
-	keep := map[string]bool{}
+	set := p.store.Settings()
+	hidden := func(name string) bool { return p.ignore[name] || set.IsHidden(name) }
+
+	// Favorites are tracked even when they are older than the listed page.
+	listed := map[string]bool{}
 	for _, r := range repos {
-		if r.Archived || p.ignore[r.FullName] || len(keep) == trackedRepos {
+		listed[r.FullName] = true
+	}
+	for _, f := range set.Favorites {
+		if listed[f] || hidden(f) {
 			continue
+		}
+		var r repo
+		if err := p.c.get(ctx, "/repos/"+f, &r); err != nil {
+			p.log.Warn("favorite not reachable", "repo", f, "err", err)
+			continue // a deleted or renamed favorite must not stop polling
+		}
+		repos = append(repos, r)
+	}
+
+	keep := map[string]bool{}
+	var available []string
+	recent := 0
+	for _, r := range repos {
+		if r.Archived || p.ignore[r.FullName] {
+			continue
+		}
+		available = append(available, r.FullName)
+		if set.IsHidden(r.FullName) {
+			continue
+		}
+		if !set.IsFavorite(r.FullName) {
+			if recent == trackedRepos {
+				continue
+			}
+			recent++
 		}
 		keep[r.FullName] = true
 		t, ok := p.repos[r.FullName]
@@ -142,6 +181,7 @@ func (p *Poller) listRepos(ctx context.Context) error {
 			delete(p.repos, name)
 		}
 	}
+	slices.Sort(available)
 	p.store.Update(func(in *state.Inputs) {
 		for name := range in.Projects {
 			if !keep[name] {
@@ -151,6 +191,7 @@ func (p *Poller) listRepos(ctx context.Context) error {
 		for name, t := range p.repos {
 			in.Projects[name] = t.project
 		}
+		in.Available = available
 	})
 	return nil
 }

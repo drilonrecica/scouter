@@ -104,3 +104,45 @@ func TestStreamSendsInitialAndUpdates(t *testing.T) {
 		t.Fatalf("second = %+v, first version %d", second, first.Version)
 	}
 }
+
+func put(t *testing.T, srv *httptest.Server, path, token, body string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
+}
+
+func TestPutSettings(t *testing.T) {
+	store := state.NewStore("")
+	srv := httptest.NewServer(New(store, "secret"))
+	defer srv.Close()
+
+	good, _ := json.Marshal(func() state.Settings { s := state.DefaultSettings(); s.Kiosk = true; return s }())
+	if resp := put(t, srv, "/v1/settings", "wrong", string(good)); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong token: %d", resp.StatusCode)
+	}
+	if resp := put(t, srv, "/v1/settings", "secret", string(good)); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("good settings: %d", resp.StatusCode)
+	}
+	if !store.Settings().Kiosk {
+		t.Fatal("settings not stored")
+	}
+	for name, body := range map[string]string{
+		"invalid":       strings.Replace(string(good), `"alert_hours":12`, `"alert_hours":0`, 1),
+		"unknown field": strings.Replace(string(good), `{`, `{"token":"x",`, 1),
+		"too big":       `{"hidden":["` + strings.Repeat("a", 20<<10) + `"]}`,
+		"not json":      `kiosk=true`,
+	} {
+		if resp := put(t, srv, "/v1/settings", "secret", body); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: status %d, want 400", name, resp.StatusCode)
+		}
+	}
+	if !store.Settings().Kiosk {
+		t.Fatal("a rejected update changed the stored settings")
+	}
+}

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
+	"sync/atomic"
 )
 
 // Client is a minimal GitHub REST client. It remembers each URL's ETag and
@@ -21,7 +23,12 @@ type Client struct {
 
 	mu    sync.Mutex
 	cache map[string]cached
+
+	rateRemaining atomic.Int64 // from X-RateLimit-Remaining; -1 until known
 }
+
+// RateRemaining is GitHub's remaining request budget for this hour, or -1.
+func (c *Client) RateRemaining() int64 { return c.rateRemaining.Load() }
 
 type cached struct {
 	etag string
@@ -29,7 +36,9 @@ type cached struct {
 }
 
 func NewClient(base, token string, hc *http.Client) *Client {
-	return &Client{base: base, token: token, http: hc, cache: map[string]cached{}}
+	c := &Client{base: base, token: token, http: hc, cache: map[string]cached{}}
+	c.rateRemaining.Store(-1)
+	return c
 }
 
 func (c *Client) get(ctx context.Context, path string, v any) error {
@@ -53,6 +62,9 @@ func (c *Client) get(ctx context.Context, path string, v any) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if n, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Remaining"), 10, 64); err == nil {
+		c.rateRemaining.Store(n)
+	}
 
 	var body []byte
 	switch {

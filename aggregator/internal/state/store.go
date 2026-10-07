@@ -16,14 +16,12 @@ import (
 // spares let the owner pin something slightly older in Focus.
 const MaxProjects = 15
 
-// AlertWindow: only failures this recent take over the screen. Older red
-// builds are known state and stay visible in Grid without shouting.
-const AlertWindow = 12 * time.Hour
-
 // Inputs is what sources write. The published State is derived from it.
 type Inputs struct {
-	Projects map[string]Project // by FullName
-	Sources  map[string]Source
+	Projects  map[string]Project // by FullName
+	Sources   map[string]Source
+	Available []string // every trackable repo, for the settings pickers
+	Settings  Settings
 }
 
 // Store owns the inputs, derives the published State and fans changes out to subscribers.
@@ -34,13 +32,14 @@ type Store struct {
 	pubJSON  []byte
 	subs     map[chan State]struct{}
 	snapshot string // file path, empty = no persistence
+	settings string // settings file path, empty = no persistence
 	now      func() time.Time
 }
 
 // NewStore restores the last snapshot from snapshotPath if there is one.
 func NewStore(snapshotPath string) *Store {
 	s := &Store{
-		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}},
+		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}, Settings: DefaultSettings()},
 		subs:     map[chan State]struct{}{},
 		snapshot: snapshotPath,
 		// UTC: older Android (java.time on API < 33) cannot parse offsets like +02:00.
@@ -59,6 +58,39 @@ func NewStore(snapshotPath string) *Store {
 	}
 	s.publishLocked()
 	return s
+}
+
+// UseSettingsFile loads settings from path and saves every later change there.
+func (s *Store) UseSettingsFile(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings = path
+	s.in.Settings = loadSettings(path)
+	s.publishLocked()
+}
+
+// Settings returns the current settings.
+func (s *Store) Settings() Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.in.Settings
+}
+
+// SetSettings validates, persists and publishes new settings.
+func (s *Store) SetSettings(next Settings) error {
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.settings != "" {
+		if err := writeAtomic(s.settings, next); err != nil {
+			return err
+		}
+	}
+	s.in.Settings = next
+	s.publishLocked()
+	return nil
 }
 
 // Get returns the current published state.
@@ -131,22 +163,29 @@ func derive(in Inputs, now time.Time) State {
 		return cmp.Compare(a.FullName, b.FullName)
 	})
 
-	// Keep the most active projects, plus anything failing further down:
-	// a broken build must never fall off the dashboard for being old.
+	// Keep the most active projects, plus favorites and anything failing
+	// further down: a broken build must never fall off the dashboard for
+	// being old. Hidden repos never show, even from an old snapshot.
 	var projects []Project
-	for i, p := range all {
-		if i < MaxProjects || (p.CI != nil && p.CI.Status == CIFailure) {
+	kept := 0
+	for _, p := range all {
+		if in.Settings.IsHidden(p.FullName) {
+			continue
+		}
+		if kept < MaxProjects || in.Settings.IsFavorite(p.FullName) || (p.CI != nil && p.CI.Status == CIFailure) {
 			projects = append(projects, p)
 		}
+		kept++
 	}
 
-	st := State{Projects: projects, Alerts: []Alert{}, Sources: in.Sources}
+	available := slices.DeleteFunc(slices.Clone(in.Available), in.Settings.IsHidden)
+	st := State{Projects: projects, Alerts: []Alert{}, Sources: in.Sources, Settings: in.Settings, Available: available}
 	if len(projects) > 0 {
 		st.Focus = projects[0].FullName
 	}
 
 	for _, p := range projects {
-		if p.CI == nil || p.CI.Status != CIFailure || now.Sub(p.CI.StartedAt) > AlertWindow {
+		if p.CI == nil || p.CI.Status != CIFailure || now.Sub(p.CI.StartedAt) > in.Settings.AlertWindow() {
 			continue
 		}
 		// Stamped with when the run failed, not when Scouter noticed: a
@@ -161,8 +200,8 @@ func derive(in Inputs, now time.Time) State {
 	return st
 }
 
-func writeAtomic(path string, st State) error {
-	b, err := json.Marshal(st)
+func writeAtomic(path string, v any) error {
+	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}

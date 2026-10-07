@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -132,5 +133,30 @@ func TestPollerKeepsRestoredCIUntilRepolled(t *testing.T) {
 	app := store.Get().Projects[0]
 	if app.CI == nil || app.CI.Status != state.CIFailure || app.OpenPRs != 2 {
 		t.Fatalf("app = %+v: the repo list must not wipe restored CI state", app)
+	}
+}
+
+func TestPollerFollowsSettings(t *testing.T) {
+	gh, p, store := setup(t)
+	gh.bodies["/repos/me/old-fav"] = map[string]any{"name": "old-fav", "full_name": "me/old-fav", "default_branch": "main", "pushed_at": t0}
+	gh.bodies["/repos/me/old-fav/actions/runs"] = map[string]any{"workflow_runs": []workflowRun{}}
+	gh.bodies["/repos/me/old-fav/pulls"] = []map[string]any{}
+	set := state.DefaultSettings()
+	set.Hidden = []string{"me/app"}
+	set.Favorites = []string{"me/old-fav"}
+	if err := store.SetSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	p.step(context.Background())
+
+	st := store.Get()
+	if len(st.Projects) != 1 || st.Projects[0].FullName != "me/old-fav" {
+		t.Fatalf("projects = %+v: want only the unlisted favorite (app is hidden)", st.Projects)
+	}
+	if fmt.Sprint(st.Available) != "[me/old-fav]" {
+		t.Fatalf("available = %v: archived, env-ignored and hidden repos must not be offered", st.Available)
+	}
+	if p.c.RateRemaining() != -1 {
+		t.Fatalf("rate = %d, the fake sends no rate header", p.c.RateRemaining())
 	}
 }
