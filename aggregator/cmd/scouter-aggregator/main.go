@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -53,6 +54,7 @@ func run(log *slog.Logger) error {
 	if settingsFile != "" {
 		store.UseSettingsFile(settingsFile)
 	}
+	reportStorage(store, dataDir, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -94,6 +96,22 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// reportStorage checks that the data dir is writable and publishes the result
+// as the "storage" source, so a misowned volume shows on the admin status page
+// instead of failing silently (settings could not be saved, state not kept).
+func reportStorage(store *state.Store, dir string, log *slog.Logger) {
+	src := state.Source{OK: true, UpdatedAt: time.Now().UTC()}
+	probe := filepath.Join(dir, ".write-test")
+	if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
+		src.OK = false
+		src.Error = fmt.Sprintf("%s is not writable (%v): settings cannot be saved. The volume must be writable by uid 65532.", dir, err)
+		log.Error("data dir not writable", "dir", dir, "uid", os.Getuid(), "err", err)
+	} else {
+		os.Remove(probe)
+	}
+	store.Update(func(in *state.Inputs) { in.Sources["storage"] = src })
 }
 
 func env(key, def string) string {

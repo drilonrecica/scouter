@@ -3,14 +3,14 @@
 <form method="post" action="/admin/projects">
 <input type="hidden" name="csrf" value="{{.CSRF}}">
 <div class="panel">
-  <p class="hint">★ Favorites are always tracked and shown first, lowest order number first. Hidden repos are never tracked.</p>
+  <p class="hint">★ Favorites are always tracked and shown first, lowest order number first (order is optional and only used for favorites). Hidden repos are never tracked.</p>
   <table>
     <tr><th>REPO</th><th class="c">★ FAVORITE</th><th class="c">ORDER</th><th class="c">HIDDEN</th></tr>
     {{range $i, $r := .Data.Rows}}
     <tr>
       <td>{{$r.Name}}<input type="hidden" name="repo" value="{{$r.Name}}"></td>
       <td class="c"><input type="checkbox" name="fav" value="{{$r.Name}}" {{if $r.Favorite}}checked{{end}} aria-label="favorite {{$r.Name}}"></td>
-      <td class="c"><input type="number" name="order:{{$r.Name}}" value="{{$r.Order}}" min="1" max="99" aria-label="order {{$r.Name}}"></td>
+      <td class="c"><input type="number" name="order:{{$r.Name}}" value="{{if $r.Favorite}}{{$r.Order}}{{end}}" min="1" max="99" placeholder="—" aria-label="order {{$r.Name}}"></td>
       <td class="c"><input type="checkbox" name="hide" value="{{$r.Name}}" {{if $r.Hidden}}checked{{end}} aria-label="hide {{$r.Name}}"></td>
     </tr>
     {{end}}
