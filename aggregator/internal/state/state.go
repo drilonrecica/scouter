@@ -113,4 +113,10 @@ type State struct {
 	Available []string `json:"available"`
 	// App is the APK the phone should be running; it updates itself when the hash differs.
 	App *AppRelease `json:"app,omitempty"`
+	// History is each project's power over the last 14 days, oldest first, -1 = unknown.
+	History map[string][]int `json:"history,omitempty"`
+	// Agents are live Claude Code sessions, waiting ones first.
+	Agents []Agent `json:"agents"`
+	// Events from the last 24 h, oldest first: the phone's morning briefing.
+	Events []Event `json:"events"`
 }

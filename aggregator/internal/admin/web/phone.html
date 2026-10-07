@@ -21,6 +21,8 @@
     <input type="number" name="day_from" min="1" max="7" value="{{$.Data.DayFrom}}"> to <input type="number" name="day_to" min="1" max="7" value="{{$.Data.DayTo}}"></label>
   <label class="row"><span>On from</span><input type="time" name="on" value="{{.Schedule.On}}" required> until <input type="time" name="off" value="{{.Schedule.Off}}" required></label>
   <label class="row"><span>Kiosk mode</span><input type="checkbox" name="kiosk" {{if .Kiosk}}checked{{end}}><span class="hint">Locks the phone into Scouter (needs device owner). The screen still sleeps outside the hours above.</span></label>
+  <label class="row"><span>Wave to wake</span><input type="checkbox" name="wave" {{if .Wave}}checked{{end}}><span class="hint">Outside the hours above, wave over the phone's top to see the dashboard for 20 s</span></label>
+  <label class="row"><span>Morning briefing</span><input type="checkbox" name="briefing" {{if .Briefing}}checked{{end}}><span class="hint">A 30 s report of what happened overnight when the screen turns on</span></label>
   <label class="row"><span>Alerts for failures younger than (hours)</span><input type="number" name="alert_hours" min="1" max="72" value="{{.AlertHours}}"></label>
 </div>
 <div class="panel">

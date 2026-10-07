@@ -185,3 +185,38 @@ func TestHeartbeatAndAPK(t *testing.T) {
 		t.Fatalf("apk: %d %q", resp.StatusCode, b)
 	}
 }
+
+func TestAgentEvents(t *testing.T) {
+	store := state.NewStore("")
+	api := New(store, "phone")
+	api.AcceptAgentEvents(store, "hook")
+	srv := httptest.NewServer(api)
+	defer srv.Close()
+	send := func(token, body string) int {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/agent-events", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	// Claude Code sends the whole hook payload; extra fields are ignored.
+	ev := `{"session_id":"s1","cwd":"/home/me/Code/igris","hook_event_name":"Notification","message":"Claude needs your permission"}`
+	if c := send("nope", ev); c != http.StatusUnauthorized {
+		t.Fatalf("wrong token: %d", c)
+	}
+	if c := send("hook", ev); c != http.StatusNoContent {
+		t.Fatalf("hook token: %d", c)
+	}
+	if c := send("phone", `{"session_id":"s2","cwd":"/x/y","hook_event_name":"UserPromptSubmit"}`); c != http.StatusNoContent {
+		t.Fatalf("phone token: %d", c)
+	}
+	if c := send("hook", `{"cwd":"/x"}`); c != http.StatusBadRequest {
+		t.Fatalf("no session: %d", c)
+	}
+	if ag := store.Get().Agents; len(ag) != 2 || ag[0].State != state.AgentWaiting || ag[0].Project != "igris" {
+		t.Fatalf("agents = %+v", ag)
+	}
+}

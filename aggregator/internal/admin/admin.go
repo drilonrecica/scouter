@@ -530,6 +530,8 @@ func (u *ui) savePhone(w http.ResponseWriter, r *http.Request, _ string, s *sess
 	set.Kiosk = f("kiosk") == "on"
 	set.AlertHours = num("alert_hours")
 	set.Background = state.Background{Aura: f("aura") == "on", Stars: f("stars") == "on", Mesh: f("mesh") == "on"}
+	set.Wave = f("wave") == "on"
+	set.Briefing = f("briefing") == "on"
 	u.save(w, r, s, set, "/admin/phone")
 }
 

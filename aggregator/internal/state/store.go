@@ -25,6 +25,7 @@ type Inputs struct {
 	Settings  Settings
 	Deploys   map[string]Deploy // by project FullName, from Coolify
 	App       *AppRelease       // APK offered for over-the-air update
+	Agents    map[string]Agent  // Claude Code sessions, by session ID
 }
 
 // Store owns the inputs, derives the published State and fans changes out to subscribers.
@@ -40,6 +41,11 @@ type Store struct {
 
 	heartbeat     *Heartbeat
 	heartbeatFile string
+
+	history     history
+	historyFile string
+
+	events []Event // newest last, at most maxEvents
 }
 
 // NewStore restores the last snapshot from snapshotPath if there is one.
@@ -58,6 +64,7 @@ func NewStore(snapshotPath string) *Store {
 				for _, p := range st.Projects {
 					s.in.Projects[p.FullName] = p
 				}
+				s.events = st.Events
 				s.pub.Version = st.Version
 			}
 		}
@@ -137,11 +144,29 @@ func (s *Store) Subscribe() (<-chan State, func()) {
 }
 
 func (s *Store) publishLocked() {
-	next := derive(s.in, s.now()) // Version is zero here, so b compares content only
+	now := s.now()
+	if s.history != nil && s.history.record(s.in.Projects, now) && s.historyFile != "" {
+		_ = writeAtomic(s.historyFile, s.history)
+	}
+	next := derive(s.in, now) // Version is zero here, so b compares content only
+	if s.history != nil {
+		for _, p := range next.Projects {
+			if ser := s.history.series(p.FullName, now); ser != nil {
+				if next.History == nil {
+					next.History = map[string][]int{}
+				}
+				next.History[p.FullName] = ser
+			}
+		}
+	}
 	b, _ := json.Marshal(next)
 	if s.pubJSON != nil && bytes.Equal(b, s.pubJSON) {
 		return
 	}
+	// Events are derived from the change itself, so they are added after the
+	// comparison: an unchanged document must not re-record anything.
+	s.events = appendEvents(s.events, transitions(s.pub, next, now))
+	next.Events = recentEvents(s.events, now)
 	s.pubJSON = b
 	next.Version = s.pub.Version + 1
 	s.pub = next
@@ -189,7 +214,8 @@ func derive(in Inputs, now time.Time) State {
 	}
 
 	available := slices.DeleteFunc(slices.Clone(in.Available), in.Settings.IsHidden)
-	st := State{Projects: projects, Alerts: []Alert{}, Sources: in.Sources, Settings: in.Settings, Available: available, App: in.App}
+	st := State{Projects: projects, Alerts: []Alert{}, Sources: in.Sources, Settings: in.Settings, Available: available, App: in.App,
+		Agents: liveAgents(in.Agents, now)}
 	if len(projects) > 0 {
 		st.Focus = projects[0].FullName
 	}

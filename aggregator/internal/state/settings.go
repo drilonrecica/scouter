@@ -23,6 +23,8 @@ type Settings struct {
 	Kiosk         bool       `json:"kiosk"`
 	Background    Background `json:"background"`
 	AlertHours    int        `json:"alert_hours"` // failures younger than this take over the screen
+	Wave          bool       `json:"wave"`        // wave over the proximity sensor to peek at night
+	Briefing      bool       `json:"briefing"`    // morning report when the screen turns on
 }
 
 // Schedule is when the phone's screen is on. Days "1-5" = Monday to Friday
@@ -58,6 +60,8 @@ func DefaultSettings() Settings {
 		Schedule:      Schedule{Days: "1-5", On: "09:00", Off: "19:00"},
 		Background:    Background{Aura: true, Stars: true},
 		AlertHours:    12,
+		Wave:          true,
+		Briefing:      true,
 	}
 }
 

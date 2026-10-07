@@ -36,6 +36,43 @@ func New(store *state.Store, phoneToken string) *Server {
 	return s
 }
 
+// AcceptAgentEvents takes Claude Code hook events. hookToken (optional) is a
+// narrower token for the laptop's hooks; the phone token also works.
+func (s *Server) AcceptAgentEvents(store *state.Store, hookToken string) {
+	tokens := []string{s.phoneToken}
+	if hookToken != "" {
+		tokens = append(tokens, hookToken)
+	}
+	s.mux.Handle("POST /v1/agent-events", requireAnyToken(tokens, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ev struct {
+			SessionID string `json:"session_id"`
+			Cwd       string `json:"cwd"`
+			Event     string `json:"hook_event_name"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&ev); err != nil || ev.SessionID == "" {
+			http.Error(w, "bad event", http.StatusBadRequest)
+			return
+		}
+		store.AgentEvent(ev.SessionID, ev.Cwd, ev.Event)
+		w.WriteHeader(http.StatusNoContent)
+	})))
+}
+
+func requireAnyToken(tokens []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := []byte(r.Header.Get("Authorization"))
+		ok := 0
+		for _, t := range tokens {
+			ok |= subtle.ConstantTimeCompare(got, []byte("Bearer "+t))
+		}
+		if ok != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // ServeAPK lets the phone download the APK at path for over-the-air updates.
 func (s *Server) ServeAPK(path string) {
 	s.mux.Handle("GET /v1/app.apk", requireToken(s.phoneToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
