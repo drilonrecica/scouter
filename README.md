@@ -67,7 +67,9 @@ Endpoints: `GET /v1/stream` (SSE, full state on every change, ping every 25 s),
 
 **Coolify:** new resource → this repo, build pack *Dockerfile*, base directory
 `/aggregator`, port 8080, a persistent volume on `/data`, the env vars above as
-secrets. Health check path `/healthz`.
+secrets. Leave Coolify's health check **off**: the image is distroless (no
+`curl`/`wget` inside), and Coolify runs its checks inside the container, so
+an enabled check fails every deploy. Check `/healthz` from outside instead.
 
 Local run: `cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make run`
 
