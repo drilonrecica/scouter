@@ -81,6 +81,10 @@ func TestStreamSendsInitialAndUpdates(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Fatalf("content-type %q", ct)
 	}
+	// Without these, a compressing proxy buffers the stream and the phone sees nothing.
+	if resp.Header.Get("Content-Encoding") != "identity" || !strings.Contains(resp.Header.Get("Cache-Control"), "no-transform") {
+		t.Fatalf("stream headers allow proxy buffering: %v", resp.Header)
+	}
 
 	lines := bufio.NewScanner(resp.Body)
 	next := func(prefix string) string {

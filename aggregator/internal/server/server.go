@@ -95,7 +95,12 @@ func (s *Server) stream(store *state.Store) http.Handler {
 		defer s.clients.Add(-1)
 		rc := http.NewResponseController(w)
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
+		// Proxies must pass every event through at once. A compressing proxy
+		// (Coolify's Traefik with gzip on) buffered the whole stream: the phone
+		// connected but never got a byte. "identity" marks the body as already
+		// encoded, which compressors skip; no-transform covers Cloudflare.
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("Content-Encoding", "identity")
 		w.Header().Set("X-Accel-Buffering", "no")
 
 		updates, cancel := store.Subscribe()
