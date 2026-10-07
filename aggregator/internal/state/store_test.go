@@ -144,3 +144,35 @@ func TestOldFailuresDoNotAlert(t *testing.T) {
 		t.Fatal("the project itself must still show as failing")
 	}
 }
+
+func TestDeployMismatchAndAlerts(t *testing.T) {
+	s := newTestStore(t, "")
+	red := project("app", 5, CIFailure) // CI sha "sha-app" failed 5 min ago
+	green := project("ok", 5, CISuccess)
+	s.Update(func(in *Inputs) {
+		in.Projects[red.FullName] = red
+		in.Projects[green.FullName] = green
+		in.Deploys[red.FullName] = Deploy{Status: DeploySuccess, Commit: "sha-app", At: t0.Add(-time.Minute)}
+		in.Deploys[green.FullName] = Deploy{Status: DeployFailure, Commit: "sha-okk", At: t0.Add(-2 * time.Minute)}
+	})
+	st := s.Get()
+	kinds := map[string]bool{}
+	for _, a := range st.Alerts {
+		kinds[a.Kind] = true
+	}
+	if !kinds["ci_failed"] || !kinds["deployed_red"] || !kinds["deploy_failed"] {
+		t.Fatalf("alerts = %+v", st.Alerts)
+	}
+	for _, p := range st.Projects {
+		if p.Name == "app" && (!p.Mismatch || p.Deploy == nil) {
+			t.Fatalf("app should be flagged deployed-while-red: %+v", p)
+		}
+		if p.Name == "ok" && p.Mismatch {
+			t.Fatal("a failed deploy is not a mismatch")
+		}
+	}
+
+	if !sameCommit("ABCDEF1", "abcdef1234") || sameCommit("abc", "abcdef") || sameCommit("abcdef1", "abcdef2") {
+		t.Fatal("sameCommit")
+	}
+}

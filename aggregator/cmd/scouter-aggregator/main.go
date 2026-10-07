@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/drilonrecica/scouter/aggregator/internal/admin"
+	"github.com/drilonrecica/scouter/aggregator/internal/coolify"
 	"github.com/drilonrecica/scouter/aggregator/internal/github"
 	"github.com/drilonrecica/scouter/aggregator/internal/server"
 	"github.com/drilonrecica/scouter/aggregator/internal/state"
@@ -63,6 +64,13 @@ func run(log *slog.Logger) error {
 	poller := github.NewPoller(gh, store, ignore, log)
 	go poller.Run(ctx)
 
+	coolifyURL, coolifyToken := os.Getenv("SCOUTER_COOLIFY_URL"), os.Getenv("SCOUTER_COOLIFY_TOKEN")
+	if coolifyURL != "" && coolifyToken != "" {
+		go coolify.NewPoller(coolifyURL, coolifyToken, &http.Client{Timeout: 20 * time.Second}, store, log).Run(ctx)
+	} else {
+		log.Info("coolify source off: set SCOUTER_COOLIFY_URL and SCOUTER_COOLIFY_TOKEN for deploy status")
+	}
+
 	api := server.New(store, phoneToken)
 	adminPassword := os.Getenv("SCOUTER_ADMIN_PASSWORD")
 	isSet := func(k string) bool { return os.Getenv(k) != "" }
@@ -77,6 +85,8 @@ func run(log *slog.Logger) error {
 			{Name: "SCOUTER_TOKEN", Purpose: "phone access", Set: true},
 			{Name: "SCOUTER_GITHUB_TOKEN", Purpose: "GitHub API, read-only", Set: true},
 			{Name: "SCOUTER_ADMIN_PASSWORD", Purpose: "this UI", Set: len(adminPassword) >= admin.MinPassword},
+			{Name: "SCOUTER_COOLIFY_URL", Purpose: "Coolify base URL, for deploy status", Set: isSet("SCOUTER_COOLIFY_URL")},
+			{Name: "SCOUTER_COOLIFY_TOKEN", Purpose: "Coolify API, read-only", Set: isSet("SCOUTER_COOLIFY_TOKEN")},
 			{Name: "SCOUTER_IGNORE_REPOS", Purpose: "repos hidden by env (in addition to settings)", Set: isSet("SCOUTER_IGNORE_REPOS")},
 		},
 	})

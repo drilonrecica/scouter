@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +23,7 @@ type Inputs struct {
 	Sources   map[string]Source
 	Available []string // every trackable repo, for the settings pickers
 	Settings  Settings
+	Deploys   map[string]Deploy // by project FullName, from Coolify
 }
 
 // Store owns the inputs, derives the published State and fans changes out to subscribers.
@@ -39,7 +41,7 @@ type Store struct {
 // NewStore restores the last snapshot from snapshotPath if there is one.
 func NewStore(snapshotPath string) *Store {
 	s := &Store{
-		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}, Settings: DefaultSettings()},
+		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}, Settings: DefaultSettings(), Deploys: map[string]Deploy{}},
 		subs:     map[chan State]struct{}{},
 		snapshot: snapshotPath,
 		// UTC: older Android (java.time on API < 33) cannot parse offsets like +02:00.
@@ -154,6 +156,10 @@ func (s *Store) publishLocked() {
 func derive(in Inputs, now time.Time) State {
 	all := make([]Project, 0, len(in.Projects))
 	for _, p := range in.Projects {
+		if d, ok := in.Deploys[p.FullName]; ok {
+			p.Deploy = &d
+			p.Mismatch = deployedRed(p)
+		}
 		all = append(all, p)
 	}
 	slices.SortFunc(all, func(a, b Project) int {
@@ -184,20 +190,59 @@ func derive(in Inputs, now time.Time) State {
 		st.Focus = projects[0].FullName
 	}
 
+	window := in.Settings.AlertWindow()
 	for _, p := range projects {
-		if p.CI == nil || p.CI.Status != CIFailure || now.Sub(p.CI.StartedAt) > in.Settings.AlertWindow() {
-			continue
-		}
-		// Stamped with when the run failed, not when Scouter noticed: a
+		// Stamped with when things failed, not when Scouter noticed: a
 		// restart must not make an old failure look new.
-		st.Alerts = append(st.Alerts, Alert{
-			ID: fmt.Sprintf("ci:%s:%s", p.FullName, p.CI.SHA), Kind: "ci_failed", Project: p.FullName,
-			At:   p.CI.StartedAt.Add(time.Duration(p.CI.DurationS) * time.Second),
-			Text: fmt.Sprintf("%s failed on %s: %s", p.CI.Workflow, p.CI.Branch, p.CI.Title),
-		})
+		if p.CI != nil && p.CI.Status == CIFailure && now.Sub(p.CI.StartedAt) <= window {
+			st.Alerts = append(st.Alerts, Alert{
+				ID: fmt.Sprintf("ci:%s:%s", p.FullName, p.CI.SHA), Kind: "ci_failed", Project: p.FullName,
+				At:   p.CI.StartedAt.Add(time.Duration(p.CI.DurationS) * time.Second),
+				Text: fmt.Sprintf("%s failed on %s: %s", p.CI.Workflow, p.CI.Branch, p.CI.Title),
+			})
+		}
+		if d := p.Deploy; d != nil && now.Sub(d.At) <= window {
+			switch {
+			case d.Status == DeployFailure:
+				st.Alerts = append(st.Alerts, Alert{
+					ID: fmt.Sprintf("deploy:%s:%s", p.FullName, d.Commit), Kind: "deploy_failed", Project: p.FullName, At: d.At,
+					Text: fmt.Sprintf("Deploy of %s failed on Coolify", short(d.Commit)),
+				})
+			case p.Mismatch:
+				st.Alerts = append(st.Alerts, Alert{
+					ID: fmt.Sprintf("red:%s:%s", p.FullName, d.Commit), Kind: "deployed_red", Project: p.FullName, At: d.At,
+					Text: fmt.Sprintf("Deployed %s although its CI failed", short(d.Commit)),
+				})
+			}
+		}
 	}
 	slices.SortFunc(st.Alerts, func(a, b Alert) int { return b.At.Compare(a.At) })
 	return st
+}
+
+// deployedRed reports a successful deploy of a commit whose CI failed.
+func deployedRed(p Project) bool {
+	d := p.Deploy
+	if d == nil || d.Status != DeploySuccess || p.CI == nil || p.CI.Status != CIFailure || d.Commit == "" {
+		return false
+	}
+	return sameCommit(d.Commit, p.CI.SHA)
+}
+
+// sameCommit compares full or abbreviated SHAs.
+func sameCommit(a, b string) bool {
+	a, b = strings.ToLower(a), strings.ToLower(b)
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return len(a) >= 7 && strings.HasPrefix(b, a)
+}
+
+func short(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func writeAtomic(path string, v any) error {

@@ -42,6 +42,34 @@ type Project struct {
 	// commits that passed. Nil until there is a finished build to judge.
 	Power   *int `json:"power,omitempty"`
 	OpenPRs int  `json:"open_prs"`
+	// Deploy is the latest Coolify deployment, when the repo has a Coolify app.
+	Deploy *Deploy `json:"deploy,omitempty"`
+	// Mismatch: the deployed commit is one whose CI failed (Coolify deploys
+	// on push without waiting for CI).
+	Mismatch bool `json:"mismatch,omitempty"`
+}
+
+// DeployStatus mirrors Coolify's deployment queue states.
+type DeployStatus string
+
+const (
+	DeployQueued    DeployStatus = "queued"
+	DeployRunning   DeployStatus = "running"
+	DeploySuccess   DeployStatus = "success"
+	DeployFailure   DeployStatus = "failure"
+	DeployCancelled DeployStatus = "cancelled"
+)
+
+// Deploy is one application's latest deployment.
+type Deploy struct {
+	Status DeployStatus `json:"status"`
+	Commit string       `json:"commit"`
+	Branch string       `json:"branch"`
+	At     time.Time    `json:"at"`
+	// Health is the app's container state as Coolify reports it, e.g. "running:healthy".
+	Health string `json:"health"`
+	// Apps counts the Coolify apps built from this repo (staging, production, ...).
+	Apps int `json:"apps"`
 }
 
 // LastActivity is what Grid sorts by and what auto-Focus follows.
