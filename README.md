@@ -15,14 +15,16 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 - **`aggregator/`** polls GitHub (with ETags, so quiet repos cost nothing),
   combines each commit's workflows into one status, and streams a small JSON
   document to the phone. Standard library only.
-- **`android/`** renders that document as a Scouter HUD. No dependencies, 116 KB APK, about 26 MB RAM.
+- **`android/`** renders that document as a Scouter HUD. No dependencies, ~150 KB APK, about 26 MB RAM.
 
 ## What the phone shows
 
 | | |
 |---|---|
-| **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`); long-press to pin (`LOCKED`). |
-| **Grid** | The 9 most active projects, failing ones first, with power levels and the average. Tap a tile to focus it. |
+| **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`), a pinned project (`LOCKED`) or cycles your favorites (`ROTATING`). Long-press to pin/unpin. |
+| **Grid** | The 9 most relevant projects: favorites first in your order, then failing, running, the rest. Power levels and the average. Tap a tile to pin it. |
+| **Backdrop** | Ki aura (edge glow in the LED's colour), star field (re-seeded every minute) and hex lens mesh, each switchable. Dim by design. |
+| **Settings** | Long-press the top strip. Favorites, hidden repos, focus mode, screen hours, kiosk, backdrop. |
 | **Alert** | A *new* failure on a default branch (less than 12 h old) cracks the lens: `POWER LEVEL DROPPING`, `PWR 9000 → 6750`. Takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen when it is off. |
 | **Power level** | Build health, 0–9000: the share of the last 20 finished default-branch commits that passed (a commit passes when all its workflows do). `----` until there is a record. Every Grid project at 9000 earns an `IT'S OVER 9000!`. |
 | **LED** (screen off) | red = undismissed alert · amber = a build is running · green = all quiet · purple = no connection |
@@ -52,13 +54,37 @@ Toei Animation or Shueisha. No official artwork is used: everything is drawn
 in code. Font: [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono)
 by Carrois Type Design, SIL Open Font License 1.1 (`android/licenses/`).
 
+## Settings
+
+The aggregator owns all settings (`/data/settings.json`): hidden repos,
+ordered favorites (always tracked, shown first), focus mode (latest, pinned,
+rotate), screen hours, kiosk, backdrop layers and the alert window. Two
+editors, one source of truth: the **admin UI** and the phone's **settings
+screen** (which sends `PUT /v1/settings` with the phone token). Changes reach
+the phone within seconds through the stream. Secrets are never settings:
+they stay in environment variables.
+
+### Admin UI
+
+`https://<your-domain>/admin/`, enabled only when `SCOUTER_ADMIN_PASSWORD`
+is set (at least 12 characters; otherwise `/admin` is a 404). Pages: status
+(phones connected, GitHub rate limit, sources, which secrets are set),
+projects, phone.
+
+Server-rendered, no JavaScript. Server-side sessions in an `HttpOnly`,
+`SameSite=Strict` cookie (12 h); a CSRF token plus an Origin check on every
+form; logins rate-limited (5 failures per client, 10 overall per 10 minutes);
+a CSP that forbids scripts. For a second lock, put Cloudflare Access in front
+of `/admin*`.
+
 ## Aggregator
 
 | Env var | |
 |---|---|
 | `SCOUTER_TOKEN` | required: bearer token the phone sends |
 | `SCOUTER_GITHUB_TOKEN` | required: fine-grained PAT, read-only *Actions*, *Contents*, *Pull requests*, *Metadata* on all your repos |
-| `SCOUTER_IGNORE_REPOS` | comma-separated `owner/repo` list to hide |
+| `SCOUTER_ADMIN_PASSWORD` | optional: enables the admin UI (min 12 chars) |
+| `SCOUTER_IGNORE_REPOS` | optional: `owner/repo` list hidden on top of the settings |
 | `SCOUTER_ADDR` | default `:8080` |
 | `SCOUTER_DATA_DIR` | default `/data`; holds `state.json` so restarts don't start empty |
 
@@ -100,6 +126,28 @@ for `127.0.0.1`/`localhost`; everything else must be HTTPS.
 
 For development against a local aggregator: `adb reverse tcp:8787 tcp:8787`
 and configure `--es url http://127.0.0.1:8787` (with its token).
+
+### Kiosk mode
+
+Needs Scouter as **device owner**, which Android only allows on a phone with
+no accounts (Settings → Accounts empty):
+
+```sh
+adb shell dpm set-device-owner dev.recica.scouter/.AdminReceiver
+```
+
+Then switch *Kiosk* on in either settings editor: lock task (Home, Recents and
+the notification shade do nothing), no status bar, no lock screen. The screen
+schedule still applies: kiosk keeps people in the app, it does not keep the
+AMOLED lit all night. Leave kiosk from the phone's settings screen or the
+admin UI.
+
+Before uninstalling, release device ownership: settings screen → *Release
+device owner*, or if the phone is unreachable:
+
+```sh
+adb shell am broadcast -n dev.recica.scouter/.ConfigReceiver --ez release_owner true
+```
 
 ### Other phones?
 

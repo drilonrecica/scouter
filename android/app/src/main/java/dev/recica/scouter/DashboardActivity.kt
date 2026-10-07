@@ -14,13 +14,15 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.Toast
 import kotlin.math.abs
 import kotlin.random.Random
 
 /**
  * Full-screen kiosk; configuration arrives through [ConfigReceiver], never
  * through this exported activity's intent.
- * Swipe left/right: Focus ⇄ Grid. Long-press in Focus: pin/unpin. Tap a tile: focus it. Tap an alert: dismiss.
+ * Swipe left/right: Focus ⇄ Grid. Long-press the top strip: settings. Long-press elsewhere
+ * in Focus: pin/unpin. Tap a tile: pin it. Tap an alert: dismiss.
  */
 class DashboardActivity : Activity() {
     private lateinit var prefs: Prefs
@@ -29,8 +31,17 @@ class DashboardActivity : Activity() {
     private var shown: DashState? = null
 
     /** Hub changes: a new document starts the scan animation, anything else just redraws. */
+    /** Kiosk state last applied; null forces a re-apply (on resume). */
+    private var appliedKiosk: Boolean? = null
+
     private val redraw: () -> Unit = {
         applyScreenFlag()
+        Hub.state?.settings?.kiosk?.let { k ->
+            if (k != appliedKiosk) {
+                Kiosk.apply(this, k)
+                appliedKiosk = k
+            }
+        }
         val s = Hub.state
         if (s != null && s.version != shown?.version) {
             view.onStateChanged(shown, s)
@@ -65,7 +76,6 @@ class DashboardActivity : Activity() {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         view = DashboardView(this)
-        view.pinned = prefs.pinned
         view.dismissed = prefs.dismissed
         setContentView(view)
         val gestures = GestureDetector(this, Gestures())
@@ -83,6 +93,7 @@ class DashboardActivity : Activity() {
         super.onResume()
         immersive()
         Hub.listen(redraw)
+        appliedKiosk = null
         redraw() // catch up on anything that arrived while paused
         main.post(shift)
         main.post(seconds)
@@ -105,6 +116,10 @@ class DashboardActivity : Activity() {
             it.hide(WindowInsets.Type.systemBars())
             it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    private fun save(next: Settings) = Api.saveSettings(this, next) { err ->
+        if (err != null) Toast.makeText(this, "Not saved: $err", Toast.LENGTH_LONG).show()
     }
 
     private fun dismissAlerts(): Boolean {
@@ -131,8 +146,7 @@ class DashboardActivity : Activity() {
             if ((cardShowing || onBanner) && dismissAlerts()) return true
             if (view.mode == DashboardView.Mode.GRID) {
                 view.tiles.firstOrNull { it.first.contains(e.x - view.translationX, e.y - view.translationY) }?.let { (_, p) ->
-                    prefs.pinned = p.fullName
-                    view.pinned = p.fullName
+                    save(s.settings.copy(focusMode = "pinned", pinned = p.fullName))
                     view.mode = DashboardView.Mode.FOCUS
                     view.invalidate()
                 }
@@ -141,13 +155,15 @@ class DashboardActivity : Activity() {
         }
 
         override fun onLongPress(e: MotionEvent) {
+            view.performHapticFeedback(View.HAPTIC_FEEDBACK_ENABLED)
+            if (e.y < view.headerHeight()) {
+                startActivity(Intent(this@DashboardActivity, SettingsActivity::class.java))
+                return
+            }
             if (view.mode != DashboardView.Mode.FOCUS) return
             val s = Hub.state ?: return
-            val current = Logic.focus(s, prefs.pinned) ?: return
-            prefs.pinned = if (prefs.pinned == current.fullName) null else current.fullName
-            view.pinned = prefs.pinned
-            view.performHapticFeedback(View.HAPTIC_FEEDBACK_ENABLED)
-            view.invalidate()
+            val current = Logic.focus(s) ?: return
+            save(Logic.togglePin(s.settings, current.fullName))
         }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
@@ -167,6 +183,7 @@ class AdminReceiver : DeviceAdminReceiver()
 /**
  * Configuration over adb only:
  *   adb shell am broadcast -n dev.recica.scouter/.ConfigReceiver --es url https://… --es token … [--es schedule "1-5 09:00-19:00"]
+ *   adb shell am broadcast -n dev.recica.scouter/.ConfigReceiver --ez release_owner true
  * The manifest guards it with android.permission.DUMP, which the adb shell
  * holds and ordinary apps cannot get; otherwise any app could point the
  * phone at its own server and collect the bearer token.
@@ -176,6 +193,12 @@ class ConfigReceiver : BroadcastReceiver() {
         val prefs = Prefs(ctx)
         val url = intent.getStringExtra("url")
         val token = intent.getStringExtra("token")
+        // Recovery path when the UI is unreachable: give up device ownership.
+        if (intent.getBooleanExtra("release_owner", false)) {
+            Kiosk.release(ctx)
+            resultData = "released"
+            return
+        }
         // A new server only together with its own token: never send the
         // current token to a URL that arrived without one.
         if (url != null && token == null) {

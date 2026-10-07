@@ -45,11 +45,47 @@ class LogicTest {
     }
 
     @Test
-    fun focusPrefersPinnedThenAuto() {
-        val s = state(p("a", Status.SUCCESS), p("b", Status.SUCCESS))
-        assertEquals("me/b", Logic.focus(s, "me/b")!!.fullName)
-        assertEquals("me/a", Logic.focus(s, "me/gone")!!.fullName)
-        assertEquals("me/a", Logic.focus(s, null)!!.fullName)
+    fun focusFollowsServerFocusMode() {
+        val base = state(p("a", Status.SUCCESS), p("b", Status.SUCCESS), p("c", Status.SUCCESS))
+        assertEquals("me/a", Logic.focus(base, now)!!.fullName) // latest = the aggregator's pick
+
+        val pinned = base.copy(settings = Settings(focusMode = "pinned", pinned = "me/b"))
+        assertEquals("me/b", Logic.focus(pinned, now)!!.fullName)
+        assertTrue(Logic.locked(pinned))
+        val gone = base.copy(settings = Settings(focusMode = "pinned", pinned = "me/gone"))
+        assertEquals("me/a", Logic.focus(gone, now)!!.fullName)
+        assertFalse(Logic.locked(gone))
+
+        val rotate = base.copy(settings = Settings(focusMode = "rotate", rotateMinutes = 5, favorites = listOf("me/c", "me/missing", "me/b")))
+        val t0 = Instant.parse("2026-10-07T12:00:00Z") // minute 29_342_160, divisible by 5: slot even
+        val first = Logic.focus(rotate, t0)!!.fullName
+        val next = Logic.focus(rotate, t0.plusSeconds(5 * 60))!!.fullName
+        assertEquals(setOf("me/b", "me/c"), setOf(first, next)) // cycles present favorites only
+        assertEquals(first, Logic.focus(rotate, t0.plusSeconds(4 * 60))!!.fullName) // stable within a slot
+    }
+
+    @Test
+    fun togglePin() {
+        val pinned = Logic.togglePin(Settings(), "me/a")
+        assertEquals("pinned" to "me/a", pinned.focusMode to pinned.pinned)
+        val released = Logic.togglePin(pinned, "me/a")
+        assertEquals("latest" to "", released.focusMode to released.pinned)
+        assertEquals("me/b", Logic.togglePin(pinned, "me/b").pinned)
+    }
+
+    @Test
+    fun gridShowsFavoritesFirstInTheirOrder() {
+        val s = state(p("a", Status.SUCCESS), p("broken", Status.FAILURE), p("c", Status.SUCCESS), p("d", Status.RUNNING))
+            .copy(settings = Settings(favorites = listOf("me/c", "me/a")))
+        assertEquals(listOf("c", "a", "broken", "d"), Logic.grid(s).map { it.name })
+    }
+
+    @Test
+    fun settingsRoundTrip() {
+        val s = Settings(hidden = listOf("me/x"), favorites = listOf("me/a", "me/b"), focusMode = "rotate", rotateMinutes = 7,
+            days = "6-2", on = "08:30", off = "20:15", kiosk = true, aura = false, stars = true, mesh = true, alertHours = 3)
+        assertEquals(s, Settings.parse(org.json.JSONObject(s.toJson())))
+        assertEquals(Settings(), Settings.parse(null)) // older server: defaults
     }
 
     @Test

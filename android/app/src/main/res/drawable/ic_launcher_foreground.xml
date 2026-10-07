@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scouter: earpiece, arm and an angled teal lens with a target marker.
+     Our own drawing; everything sits inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- scaled so even the lens corners stay inside a round launcher mask -->
+    <group android:scaleX="0.78" android:scaleY="0.78" android:pivotX="54" android:pivotY="54" android:translateX="1">
+    <!-- earpiece -->
+    <path android:fillColor="#1C2630" android:strokeColor="#45B5A0" android:strokeWidth="1.5"
+        android:pathData="M27,40h6a5,5 0,0 1,5 5v24a5,5 0,0 1,-5 5h-6a5,5 0,0 1,-5 -5v-24a5,5 0,0 1,5 -5z" />
+    <path android:fillColor="#45B5A0" android:pathData="M30,48m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+    <!-- arm to the lens -->
+    <path android:fillColor="#1C2630" android:strokeColor="#45B5A0" android:strokeWidth="1.5"
+        android:pathData="M38,50h8v6h-8z" />
+    <!-- lens: angled glass with a cut corner -->
+    <path android:fillColor="#732E9E86" android:strokeColor="#45B5A0" android:strokeWidth="2.5" android:strokeLineJoin="miter"
+        android:pathData="M46,33 L79,29 L86,36 L86,73 L46,75 Z" />
+    <!-- glare -->
+    <path android:strokeColor="#59FFFFFF" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M51,39 L70,36.5" />
+    <!-- target marker -->
+    <path android:fillColor="#FF6B4A" android:pathData="M66,58 L72,50 L78,58 Z" />
+    <path android:strokeColor="#FF6B4A" android:strokeWidth="1.2" android:pathData="M64,61 h16" />
+    <!-- readout lines -->
+    <path android:strokeColor="#CC45B5A0" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M51,63 h9 M51,67.5 h6" />
+    </group>
+</vector>

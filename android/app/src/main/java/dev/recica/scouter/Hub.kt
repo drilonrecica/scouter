@@ -38,6 +38,12 @@ object Hub {
         notifyListeners()
     }
 
+    /** Optimistic local copy of new settings until the server's document confirms them. */
+    fun applySettings(next: Settings) {
+        state = state?.copy(settings = next)
+        notifyListeners()
+    }
+
     fun postConnected(c: Boolean) = main.post {
         if (c != connected) { setConnectedLocked(c); notifyListeners() }
     }
@@ -66,9 +72,6 @@ class Prefs(ctx: Context) {
     var schedule: String
         get() = p.getString("schedule", "1-5 09:00-19:00")!!
         set(v) = p.edit().putString("schedule", v).apply()
-    var pinned: String?
-        get() = p.getString("pinned", null)
-        set(v) = p.edit().putString("pinned", v).apply()
     var dismissed: Set<String>
         get() = p.getStringSet("dismissed", emptySet())!!
         set(v) = p.edit().putStringSet("dismissed", v).apply()

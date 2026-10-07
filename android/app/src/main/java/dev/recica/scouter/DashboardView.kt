@@ -26,7 +26,6 @@ class DashboardView(ctx: Context) : View(ctx) {
     enum class Mode { FOCUS, GRID }
 
     var mode = Mode.FOCUS
-    var pinned: String? = null
     var dismissed: Set<String> = emptySet()
 
     /** Grid tile rectangles from the last draw, for tap hit-testing. */
@@ -37,6 +36,7 @@ class DashboardView(ctx: Context) : View(ctx) {
     private fun dp(v: Float) = v * d
 
     private val hud = Hud(d)
+    private val backdrop = Backdrop(d)
     private val mono: Typeface = resources.getFont(R.font.share_tech_mono)
 
     // Paints and layouts are cached: the scan animation redraws every frame,
@@ -121,8 +121,8 @@ class DashboardView(ctx: Context) : View(ctx) {
                 centered(c, if (Prefs(context).configured) "SCOUTER ONLINE · CONNECTING…" else "NOT CONFIGURED · SEE README")
             }
             alert != null -> alertCard(c, alert, now)
-            mode == Mode.GRID -> { hud.frame(c, w, h); grid(c, s, now) }
-            else -> { hud.frame(c, w, h); focus(c, s, now) }
+            mode == Mode.GRID -> { background(c, s, now); hud.frame(c, w, h); grid(c, s, now) }
+            else -> { background(c, s, now); hud.frame(c, w, h); focus(c, s, now) }
         }
         if (s != null) {
             banner(c, s, now)
@@ -131,10 +131,28 @@ class DashboardView(ctx: Context) : View(ctx) {
         if (scan < 1f && alert == null) hud.sweep(c, w, dp(10f) + (h - dp(20f)) * (scan / 0.7f).coerceAtMost(1f))
     }
 
+    // ---- backdrop -----------------------------------------------------------------
+
+    /** Aura colour = the LED's verdict, so screen and light always agree. */
+    private fun background(c: Canvas, s: DashState, now: Instant) {
+        val bg = s.settings
+        val aura = if (!bg.aura) null else when (Logic.led(s, Hub.connected, dismissed)) {
+            Logic.Led.GREEN -> GREEN
+            Logic.Led.AMBER -> AMBER
+            Logic.Led.RED -> RED
+            Logic.Led.PURPLE -> PURPLE
+        }
+        // The view is pixel-shifted; the backdrop covers that margin too.
+        c.save()
+        c.translate(-translationX, -translationY)
+        backdrop.draw(c, Backdrop.Spec(width, height, aura, bg.stars, bg.mesh, now.epochSecond / 60))
+        c.restore()
+    }
+
     // ---- focus ------------------------------------------------------------------
 
     private fun focus(c: Canvas, s: DashState, now: Instant) {
-        val p = Logic.focus(s, pinned) ?: return centered(c, "NO TARGETS")
+        val p = Logic.focus(s) ?: return centered(c, "NO TARGETS")
         val pad = dp(32f)
         val w = width.toFloat()
         val split = w * 0.62f
@@ -176,7 +194,12 @@ class DashboardView(ctx: Context) : View(ctx) {
         val rx = split + dp(20f)
         val rw = w - rx - pad
         var ry = dp(96f)
-        c.drawText(if (pinned == p.fullName) "◉ LOCKED" else "◎ TRACKING", rx, ry, monoText(15f))
+        val tracking = when {
+            Logic.locked(s) -> "◉ LOCKED"
+            s.settings.focusMode == "rotate" -> "↻ ROTATING"
+            else -> "◎ TRACKING"
+        }
+        c.drawText(tracking, rx, ry, monoText(15f))
         ry += dp(40f)
         val other = p.latest
         if (other != null) {
@@ -293,6 +316,9 @@ class DashboardView(ctx: Context) : View(ctx) {
     }
 
     fun bannerHeight() = dp(40f)
+
+    /** The HUD's top strip: long-pressing it opens settings. */
+    fun headerHeight() = dp(70f)
 
     private fun connection(c: Canvas, s: DashState, now: Instant) {
         val msg = when {

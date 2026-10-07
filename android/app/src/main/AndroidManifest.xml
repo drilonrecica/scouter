@@ -10,7 +10,8 @@
 
     <application
         android:label="Scouter"
-        android:icon="@drawable/ic_scouter"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:networkSecurityConfig="@xml/network_security"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
@@ -26,6 +27,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
 
         <service android:name=".StreamService" android:exported="false" />
 

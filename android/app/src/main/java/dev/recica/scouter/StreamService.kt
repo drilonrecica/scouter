@@ -158,13 +158,22 @@ class StreamService : Service() {
         // Everything dismissed: an alert-woken screen may go dark again now.
         if (s != null && Logic.openAlerts(s, dismissed).isEmpty()) wakeUntil = Instant.EPOCH
 
-        val want = Logic.Schedule.parse(prefs.schedule).isOn(LocalDateTime.now()) || now.isBefore(wakeUntil)
+        val want = schedule().isOn(LocalDateTime.now()) || now.isBefore(wakeUntil)
         val was = Hub.wantScreenOn
         Hub.wantScreenOn = want
         if (want && (!was || fresh.isNotEmpty())) wakeScreen()
         if (!want && was) sleepScreen()
 
         setLed(Logic.led(s, Hub.connected, dismissed))
+    }
+
+    /**
+     * The server's schedule once a document has arrived. The adb-set local one
+     * covers only the time before that, or a server too old to send settings.
+     */
+    private fun schedule(): Logic.Schedule {
+        val s = Hub.state
+        return if (s != null && s.hasSettings) Logic.Schedule.of(s.settings) else Logic.Schedule.parse(prefs.schedule)
     }
 
     private fun wakeScreen() {

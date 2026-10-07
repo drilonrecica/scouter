@@ -32,18 +32,45 @@ object Logic {
 
     fun status(p: Project): Status = p.ci?.status ?: Status.NONE
 
-    /** Pinned project if it is still in the document, else the aggregator's auto focus. */
-    fun focus(s: DashState, pinned: String?): Project? =
-        s.projects.firstOrNull { it.fullName == pinned }
-            ?: s.projects.firstOrNull { it.fullName == s.focus }
-            ?: s.projects.firstOrNull()
+    /**
+     * The project Focus shows, per the server's focus mode:
+     * latest = the aggregator's pick (newest activity); pinned = that repo;
+     * rotate = cycles the favorites every rotateMinutes. Falls back to latest
+     * whenever the chosen project is not in the document.
+     */
+    fun focus(s: DashState, now: Instant = Instant.now()): Project? {
+        val byName = s.projects.associateBy { it.fullName }
+        val chosen = when (s.settings.focusMode) {
+            "pinned" -> byName[s.settings.pinned]
+            "rotate" -> s.settings.favorites.mapNotNull { byName[it] }.takeIf { it.isNotEmpty() }?.let { favs ->
+                val slot = now.epochSecond / 60 / s.settings.rotateMinutes.coerceAtLeast(1)
+                favs[(slot % favs.size).toInt()]
+            }
+            else -> null
+        }
+        return chosen ?: byName[s.focus] ?: s.projects.firstOrNull()
+    }
+
+    /** Whether Focus is held on one project (shown as LOCKED). */
+    fun locked(s: DashState): Boolean = s.settings.focusMode == "pinned" && s.projects.any { it.fullName == s.settings.pinned }
 
     /**
-     * Grid order: broken first, then running, then everything else; each group
-     * by recent activity (the document is already sorted that way).
+     * Grid order: favorites first in their chosen order, then broken, then
+     * running, then everything else; each group by recent activity (the
+     * document is already sorted that way).
      */
-    fun grid(s: DashState): List<Project> =
-        s.projects.withIndex().sortedWith(compareBy({ rank(status(it.value)) }, { it.index })).map { it.value }.take(GRID_TILES)
+    fun grid(s: DashState): List<Project> {
+        val byName = s.projects.associateBy { it.fullName }
+        val favs = s.settings.favorites.mapNotNull { byName[it] }
+        val rest = s.projects.filter { it.fullName !in s.settings.favorites }
+            .withIndex().sortedWith(compareBy({ rank(status(it.value)) }, { it.index })).map { it.value }
+        return (favs + rest).take(GRID_TILES)
+    }
+
+    /** Settings after a long-press on the Focus project: pin it, or release a pin. */
+    fun togglePin(s: Settings, current: String): Settings =
+        if (s.focusMode == "pinned" && s.pinned == current) s.copy(focusMode = "latest", pinned = "")
+        else s.copy(focusMode = "pinned", pinned = current)
 
     private fun rank(st: Status) = when (st) {
         Status.FAILURE -> 0
@@ -76,6 +103,8 @@ object Logic {
 
         companion object {
             val DEFAULT = Schedule(DayOfWeek.MONDAY.value, DayOfWeek.FRIDAY.value, LocalTime.of(9, 0), LocalTime.of(19, 0))
+
+            fun of(s: Settings): Schedule = parse("${s.days} ${s.on}-${s.off}")
 
             fun parse(spec: String?): Schedule = runCatching {
                 val (days, hours) = spec!!.trim().split(" ")
