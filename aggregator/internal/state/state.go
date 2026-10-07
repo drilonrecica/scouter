@@ -37,7 +37,10 @@ type Project struct {
 	// CI is the newest commit on the default branch: the one that matters for deploys.
 	CI *Run `json:"ci,omitempty"`
 	// Latest is the newest commit on any other branch, when it is newer than CI.
-	Latest  *Run `json:"latest,omitempty"`
+	Latest *Run `json:"latest,omitempty"`
+	// Power is build health, 0..9000: the share of recent default-branch
+	// commits that passed. Nil until there is a finished build to judge.
+	Power   *int `json:"power,omitempty"`
 	OpenPRs int  `json:"open_prs"`
 }
 

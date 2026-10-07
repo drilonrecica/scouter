@@ -1,6 +1,7 @@
 package github
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -116,5 +117,53 @@ func TestSummarize(t *testing.T) {
 func TestSummarizeNoRuns(t *testing.T) {
 	if ci, latest := summarize(nil, "master"); ci != nil || latest != nil {
 		t.Fatalf("got %v %v", ci, latest)
+	}
+}
+
+func TestPower(t *testing.T) {
+	bot := wr("CI", "master", "z", "completed", "failure", 0, 1)
+	bot.Actor.Type = "Bot"
+	tests := []struct {
+		name string
+		runs []workflowRun
+		want int // -1 = nil
+	}{
+		{"no runs", nil, -1},
+		{"only running", []workflowRun{wr("CI", "master", "a", "in_progress", "", 0, 1)}, -1},
+		{"all green", []workflowRun{wr("CI", "master", "a", "completed", "success", 3, 4), wr("CI", "master", "b", "completed", "success", 0, 1)}, 9000},
+		{"one of four failed", []workflowRun{
+			wr("CI", "master", "a", "completed", "failure", 9, 10), wr("CI", "master", "b", "completed", "success", 6, 7),
+			wr("CI", "master", "c", "completed", "success", 3, 4), wr("CI", "master", "d", "completed", "success", 0, 1),
+		}, 6750},
+		{"a failing workflow fails its whole commit", []workflowRun{
+			wr("CI", "master", "a", "completed", "success", 3, 4), wr("Lint", "master", "a", "completed", "failure", 3, 4),
+			wr("CI", "master", "b", "completed", "success", 0, 1),
+		}, 4500},
+		{"cancelled, running, other branches and bots don't count", []workflowRun{
+			wr("CI", "master", "r", "in_progress", "", 12, 13), wr("CI", "master", "x", "completed", "cancelled", 10, 11),
+			wr("CI", "feat", "f", "completed", "failure", 8, 9), bot, wr("CI", "master", "a", "completed", "success", 0, 1),
+		}, 9000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := power(tt.runs, "master")
+			switch {
+			case tt.want == -1 && got != nil:
+				t.Fatalf("power = %d, want nil", *got)
+			case tt.want != -1 && (got == nil || *got != tt.want):
+				t.Fatalf("power = %v, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPowerCoversOnlyRecentCommits(t *testing.T) {
+	var runs []workflowRun
+	for i := range powerCommits { // newest: all green
+		runs = append(runs, wr("CI", "master", fmt.Sprint("new", i), "completed", "success", 100-i, 100-i))
+	}
+	runs = append(runs, wr("CI", "master", "ancient", "completed", "failure", 0, 1))
+	if got := power(runs, "master"); got == nil || *got != MaxPower {
+		t.Fatalf("power = %v, want %d: commits beyond the window must not count", got, MaxPower)
 	}
 }

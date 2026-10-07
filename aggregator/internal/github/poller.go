@@ -161,10 +161,11 @@ func (p *Poller) pollRuns(ctx context.Context, t *tracked) error {
 	var resp struct {
 		WorkflowRuns []workflowRun `json:"workflow_runs"`
 	}
-	if err := p.c.get(ctx, "/repos/"+t.project.FullName+"/actions/runs?per_page=30", &resp); err != nil {
+	if err := p.c.get(ctx, "/repos/"+t.project.FullName+"/actions/runs?per_page=50", &resp); err != nil {
 		return err
 	}
 	t.project.CI, t.project.Latest = summarize(resp.WorkflowRuns, t.project.DefaultBranch)
+	t.project.Power = power(resp.WorkflowRuns, t.project.DefaultBranch)
 	interval := runsQuiet
 	if p.active(t) {
 		interval = runsActive

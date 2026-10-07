@@ -26,7 +26,19 @@ class DashboardActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var view: DashboardView
     private val main = Handler(Looper.getMainLooper())
-    private val redraw: () -> Unit = { applyScreenFlag(); view.invalidate() }
+    private var shown: DashState? = null
+
+    /** Hub changes: a new document starts the scan animation, anything else just redraws. */
+    private val redraw: () -> Unit = {
+        applyScreenFlag()
+        val s = Hub.state
+        if (s != null && s.version != shown?.version) {
+            view.onStateChanged(shown, s)
+            shown = s
+        } else {
+            view.invalidate()
+        }
+    }
 
     /** Burn-in guard: nudge everything a few pixels each minute. */
     private val shift = object : Runnable {
@@ -71,7 +83,7 @@ class DashboardActivity : Activity() {
         super.onResume()
         immersive()
         Hub.listen(redraw)
-        applyScreenFlag()
+        redraw() // catch up on anything that arrived while paused
         main.post(shift)
         main.post(seconds)
     }

@@ -20,6 +20,8 @@ data class Project(
     val pushedAt: Instant?,
     val ci: Run?,
     val latest: Run?,
+    /** Build health 0..9000 (share of recent default-branch commits that passed); null = no record yet. */
+    val power: Int?,
     val openPRs: Int,
 )
 
@@ -63,6 +65,7 @@ object Parser {
         pushedAt = instant(o, "pushed_at"),
         ci = o.optJSONObject("ci")?.let(::run),
         latest = o.optJSONObject("latest")?.let(::run),
+        power = if (o.has("power")) o.getInt("power") else null,
         openPRs = o.optInt("open_prs"),
     )
 

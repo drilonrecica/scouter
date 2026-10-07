@@ -15,15 +15,16 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 - **`aggregator/`** polls GitHub (with ETags, so quiet repos cost nothing),
   combines each commit's workflows into one status, and streams a small JSON
   document to the phone. Standard library only.
-- **`android/`** renders that document. No dependencies, 85 KB APK, about 20 MB RAM.
+- **`android/`** renders that document as a Scouter HUD. No dependencies, 116 KB APK, about 26 MB RAM.
 
 ## What the phone shows
 
 | | |
 |---|---|
-| **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded). Follows your latest push; long-press to pin. |
-| **Grid** | The 9 most active projects, failing ones first. Tap a tile to focus it. |
-| **Alert** | A *new* failure on a default branch (less than 12 h old) takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen when it is off. |
+| **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`); long-press to pin (`LOCKED`). |
+| **Grid** | The 9 most active projects, failing ones first, with power levels and the average. Tap a tile to focus it. |
+| **Alert** | A *new* failure on a default branch (less than 12 h old) cracks the lens: `POWER LEVEL DROPPING`, `PWR 9000 → 6750`. Takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen when it is off. |
+| **Power level** | Build health, 0–9000: the share of the last 20 finished default-branch commits that passed (a commit passes when all its workflows do). `----` until there is a record. Every Grid project at 9000 earns an `IT'S OVER 9000!`. |
 | **LED** (screen off) | red = undismissed alert · amber = a build is running · green = all quiet · purple = no connection |
 
 Swipe left/right to change screens. The screen is on during the schedule
@@ -32,6 +33,24 @@ Swipe left/right to change screens. The screen is on during the schedule
 Long-standing red builds are deliberately **not** alerts: they show red in
 Grid, but only fresh breakage lights the LED. Hide repos you don't care about
 with `SCOUTER_IGNORE_REPOS`.
+
+## Design
+
+The phone is a Scouter: a HUD on black. The rules that keep it cheap on an
+AMOLED panel that is on all day:
+
+- **Black stays black.** Chrome (lens frame, reticle brackets, labels) is
+  thin teal lines, deliberately bluer than the green that means "passing".
+- **Status is never decoration.** Status words stay large and in their
+  colours; the HUD only frames them.
+- **Animation only on change.** A new state sweeps a scan line over the lens
+  and counts changed power levels for under a second; otherwise nothing moves
+  except a ±4 px burn-in shift once a minute.
+
+Inspired by the Scouter from Dragon Ball; not affiliated with or endorsed by
+Toei Animation or Shueisha. No official artwork is used: everything is drawn
+in code. Font: [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono)
+by Carrois Type Design, SIL Open Font License 1.1 (`android/licenses/`).
 
 ## Aggregator
 

@@ -9,6 +9,24 @@ import java.time.LocalTime
 /** Every decision the UI makes, kept free of Android so it is unit-testable. */
 object Logic {
     const val GRID_TILES = 9
+    const val MAX_POWER = 9000
+
+    fun powerText(power: Int?): String = power?.toString() ?: "----"
+
+    /** Average power of the projects that have one; null when none do. */
+    fun averagePower(ps: List<Project>): Int? = ps.mapNotNull { it.power }.takeIf { it.isNotEmpty() }?.average()?.toInt()
+
+    /** Every judged project flawless: the Grid gets to say it. */
+    fun allFlawless(ps: List<Project>): Boolean = ps.any { it.power != null } && ps.all { it.power == null || it.power == MAX_POWER }
+
+    /** Projects whose power changed between two documents: fullName to (old, new). */
+    fun powerChanges(old: DashState?, new: DashState): Map<String, Pair<Int, Int>> {
+        val before = old?.projects?.associate { it.fullName to it.power }.orEmpty()
+        return new.projects.mapNotNull { p ->
+            val was = before[p.fullName]
+            if (p.power != null && was != null && was != p.power) p.fullName to (was to p.power) else null
+        }.toMap()
+    }
 
     enum class Led { GREEN, AMBER, RED, PURPLE }
 

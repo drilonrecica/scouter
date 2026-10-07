@@ -11,10 +11,10 @@ import java.time.LocalDateTime
 class LogicTest {
     private val now: Instant = Instant.parse("2026-10-07T12:00:00Z")
 
-    private fun p(name: String, st: Status?, latest: Status? = null) = Project(
+    private fun p(name: String, st: Status?, latest: Status? = null, power: Int? = null) = Project(
         name, "me/$name", "master", now,
         st?.let { Run(it, "master", "msg", "CI", now.minusSeconds(90), 0) },
-        latest?.let { Run(it, "feat", "msg", "CI", now, 0) }, 0,
+        latest?.let { Run(it, "feat", "msg", "CI", now, 0) }, power, 0,
     )
 
     private fun state(vararg ps: Project, alerts: List<Alert> = emptyList()) =
@@ -25,12 +25,15 @@ class LogicTest {
         val s = Parser.parse(
             """{"version":7,"focus":"me/a","projects":[{"name":"a","full_name":"me/a","default_branch":"master",
                "pushed_at":"2026-10-07T11:00:00Z","ci":{"status":"failure","branch":"master","sha":"x","title":"fix it",
-               "workflow":"Lint","started_at":"2026-10-07T11:01:00Z","duration_s":75,"url":"u"},"open_prs":2}],
+               "workflow":"Lint","started_at":"2026-10-07T11:01:00Z","duration_s":75,"url":"u"},"power":6750,"open_prs":2},
+               {"name":"b","full_name":"me/b","default_branch":"main","open_prs":0}],
                "alerts":[{"id":"ci:me/a:x","kind":"ci_failed","project":"me/a","text":"t","at":"2026-10-07T13:03:00.123456789+02:00"}],
                "sources":{"github":{"ok":false,"error":"boom","updated_at":"2026-10-07T11:00:00Z"}}}""",
         )
         assertEquals(7, s.version)
-        val a = s.projects.single()
+        val a = s.projects.first()
+        assertEquals(6750, a.power)
+        assertNull(s.projects[1].power)
         assertEquals(Status.FAILURE, a.ci!!.status)
         assertEquals("Lint", a.ci!!.workflow)
         assertEquals(75, a.ci!!.durationS)
@@ -88,5 +91,21 @@ class LogicTest {
         assertEquals("2m 13s", Logic.runTime(r, now))
         assertEquals("1m 15s", Logic.runTime(r.copy(status = Status.SUCCESS, durationS = 75), now))
         assertEquals("3h ago", Logic.ago(now.minusSeconds(3 * 3600 + 5), now))
+    }
+
+    @Test
+    fun powerHelpers() {
+        val flawless = listOf(p("a", Status.SUCCESS, power = 9000), p("b", null))
+        assertTrue(Logic.allFlawless(flawless))
+        assertFalse(Logic.allFlawless(flawless + p("c", Status.FAILURE, power = 6750)))
+        assertFalse(Logic.allFlawless(listOf(p("x", null)))) // nothing judged: no bragging
+        assertEquals(7875, Logic.averagePower(listOf(p("a", null, power = 9000), p("b", null, power = 6750), p("c", null))))
+        assertNull(Logic.averagePower(listOf(p("c", null))))
+        assertEquals("----", Logic.powerText(null))
+
+        val old = state(p("a", null, power = 9000), p("b", null, power = 4500), p("c", null))
+        val new = state(p("a", null, power = 6750), p("b", null, power = 4500), p("c", null, power = 9000))
+        assertEquals(mapOf("me/a" to (9000 to 6750)), Logic.powerChanges(old, new))
+        assertTrue(Logic.powerChanges(null, new).isEmpty())
     }
 }

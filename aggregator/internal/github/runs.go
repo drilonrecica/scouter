@@ -1,6 +1,7 @@
 package github
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -35,12 +36,10 @@ func isBot(r workflowRun) bool {
 	return r.Actor.Type == "Bot" || strings.HasPrefix(r.HeadBranch, "dependabot/") || strings.HasPrefix(r.HeadBranch, "renovate/")
 }
 
-// summarize combines runs (newest first, as GitHub returns them) into the
-// latest result for the default branch and the latest result on any other
-// branch, when that one is newer.
-func summarize(runs []workflowRun, defaultBranch string) (ci, latest *state.Run) {
-	var order []string // SHAs, newest first
-	groups := map[string][]workflowRun{}
+// group drops runs that say nothing about a commit's health and groups the
+// rest by commit. GitHub returns runs newest first; order keeps that.
+func group(runs []workflowRun) (order []string, groups map[string][]workflowRun) {
+	groups = map[string][]workflowRun{}
 	for _, r := range runs {
 		if ignoredEvents[r.Event] || isBot(r) || r.Conclusion == "skipped" || r.Conclusion == "neutral" {
 			continue
@@ -50,6 +49,14 @@ func summarize(runs []workflowRun, defaultBranch string) (ci, latest *state.Run)
 		}
 		groups[r.HeadSHA] = append(groups[r.HeadSHA], r)
 	}
+	return order, groups
+}
+
+// summarize combines runs (newest first, as GitHub returns them) into the
+// latest result for the default branch and the latest result on any other
+// branch, when that one is newer.
+func summarize(runs []workflowRun, defaultBranch string) (ci, latest *state.Run) {
+	order, groups := group(runs)
 	for _, sha := range order {
 		run := combine(groups[sha])
 		if run.Branch == defaultBranch {
@@ -64,6 +71,38 @@ func summarize(runs []workflowRun, defaultBranch string) (ci, latest *state.Run)
 		}
 	}
 	return ci, latest
+}
+
+// powerCommits is how many recent default-branch commits the power level covers.
+const powerCommits = 20
+
+// MaxPower is a flawless build record. Yes, it is 9000.
+const MaxPower = 9000
+
+// power is the build health of the default branch: the share of its recent
+// finished commits that passed, scaled to 0..MaxPower. Running and cancelled
+// commits say nothing yet, so they don't count. Nil when there is no record.
+func power(runs []workflowRun, defaultBranch string) *int {
+	order, groups := group(runs)
+	var passed, total int
+	for _, sha := range order {
+		if total == powerCommits {
+			break
+		}
+		run := combine(groups[sha])
+		if run.Branch != defaultBranch || (run.Status != state.CISuccess && run.Status != state.CIFailure) {
+			continue
+		}
+		total++
+		if run.Status == state.CISuccess {
+			passed++
+		}
+	}
+	if total == 0 {
+		return nil
+	}
+	p := int(math.Round(float64(MaxPower*passed) / float64(total)))
+	return &p
 }
 
 func combine(rs []workflowRun) *state.Run {
