@@ -12,8 +12,8 @@ android {
         // The only device runs Android 12 (API 32); targeting it keeps
         // platform behaviour exactly what we test against.
         targetSdk = 32
-        versionCode = 12
-        versionName = "0.3.9"
+        versionCode = 13
+        versionName = "0.4.0"
         ndk { abiFilters += "armeabi-v7a" }
     }
 
