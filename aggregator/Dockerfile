@@ -21,4 +21,8 @@ COPY --from=build --chown=65532:65532 /out/data /data
 VOLUME /data
 EXPOSE 8080
 USER nonroot
+# The binary checks itself (exec form: there is no shell). Coolify's own
+# health check must stay off: it runs curl through /bin/sh, which overrides this.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["/scouter-aggregator", "healthcheck"]
 ENTRYPOINT ["/scouter-aggregator"]

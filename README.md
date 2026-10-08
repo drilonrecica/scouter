@@ -122,13 +122,18 @@ on the admin status page, and so is any file that fails to save.
 
 **Coolify:** new resource → this repo, build pack *Dockerfile*, base directory
 `/aggregator`, port 8080, a persistent volume on `/data`, the env vars above as
-secrets. Leave Coolify's health check **off**: the image is distroless (no
-`curl`/`wget` inside), and Coolify runs its checks inside the container, so
-an enabled check fails every deploy. Check `/healthz` from outside instead
-(an uptime monitor): it answers `ok <commit>`, or `503` with the reasons
-when a file in `/data` cannot be saved or the GitHub poller has stalled.
-The commit comes from Coolify's `SOURCE_COMMIT` build argument and also
-shows on the admin status page.
+secrets. Leave Coolify's own health check **off**: it runs `curl` through
+`/bin/sh` inside the container, and the image is distroless (no shell, no
+`curl`/`wget`), so it fails every deploy. The image checks itself instead:
+its Dockerfile `HEALTHCHECK` runs `/scouter-aggregator healthcheck`, which
+asks `/healthz`, so Coolify shows the container as healthy or unhealthy.
+Turning Coolify's check on replaces that one.
+
+`/healthz` answers `ok <commit>`, or `503` with the reasons when a file in
+`/data` cannot be saved or the GitHub poller has stalled (a GitHub outage
+or rate limit does not count). The commit comes from Coolify's
+`SOURCE_COMMIT` build argument (enable *Include Source Commit in Build*)
+and also shows on the admin status page.
 
 Local run: `cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make run`
 

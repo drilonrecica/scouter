@@ -83,3 +83,43 @@ func TestShutdownEndsOpenStreams(t *testing.T) {
 		t.Fatal("run did not return after SIGTERM")
 	}
 }
+
+func TestHealthURL(t *testing.T) {
+	for addr, want := range map[string]string{
+		":8080":          "http://127.0.0.1:8080/healthz",
+		"0.0.0.0:9000":   "http://127.0.0.1:9000/healthz",
+		"[::]:8080":      "http://127.0.0.1:8080/healthz",
+		"10.0.0.5:8080":  "http://10.0.0.5:8080/healthz",
+		"localhost:8787": "http://localhost:8787/healthz",
+	} {
+		if got, err := healthURL(addr); err != nil || got != want {
+			t.Errorf("healthURL(%q) = %q, %v; want %q", addr, got, err, want)
+		}
+	}
+	if _, err := healthURL("8080"); err == nil {
+		t.Error("an address without a port must be an error")
+	}
+}
+
+func TestHealthcheckExitCode(t *testing.T) {
+	status := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		w.Write([]byte("ok abc\n"))
+	}))
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "http://")
+
+	var out strings.Builder
+	if code := healthcheck(addr, &out); code != 0 || out.String() != "ok abc\n" {
+		t.Fatalf("healthy: exit %d, output %q", code, out.String())
+	}
+	status = http.StatusServiceUnavailable
+	if code := healthcheck(addr, io.Discard); code != 1 {
+		t.Fatalf("503: exit %d, want 1", code)
+	}
+	srv.Close()
+	if code := healthcheck(addr, io.Discard); code != 1 {
+		t.Fatalf("server down: exit %d, want 1", code)
+	}
+}

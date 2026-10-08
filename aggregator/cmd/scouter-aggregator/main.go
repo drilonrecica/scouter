@@ -32,6 +32,9 @@ var version = "dev"
 const pollStalled = 2 * time.Minute
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" { // the image's HEALTHCHECK
+		os.Exit(healthcheck(env("SCOUTER_ADDR", ":8080"), os.Stdout))
+	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("build", version)
 	if err := run(log); err != nil {
 		log.Error("exiting", "err", err)
