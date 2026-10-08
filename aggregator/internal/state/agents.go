@@ -35,6 +35,14 @@ func (s *Store) AgentEvent(sessionID, cwd, event string) {
 		if in.Agents == nil {
 			in.Agents = map[string]Agent{}
 		}
+		// Forget expired sessions, so a returning one starts fresh (with a
+		// new "since") and the map cannot grow without bound.
+		now := s.now()
+		for id, old := range in.Agents {
+			if expired(old, now) {
+				delete(in.Agents, id)
+			}
+		}
 		a, ok := in.Agents[sessionID]
 		if !ok {
 			a = Agent{ID: sessionID}
@@ -64,13 +72,17 @@ func (s *Store) AgentEvent(sessionID, cwd, event string) {
 	})
 }
 
+func expired(a Agent, now time.Time) bool {
+	return now.Sub(a.Seen) > agentIdleFor || (a.State == AgentDone && now.Sub(a.Since) > agentDoneFor)
+}
+
 // liveAgents drops finished and silent sessions and orders the rest:
 // waiting first (they need the owner), then working, then done.
 func liveAgents(all map[string]Agent, now time.Time) []Agent {
 	rank := map[string]int{AgentWaiting: 0, AgentWorking: 1, AgentDone: 2}
 	var out []Agent
 	for _, a := range all {
-		if now.Sub(a.Seen) > agentIdleFor || (a.State == AgentDone && now.Sub(a.Since) > agentDoneFor) {
+		if expired(a, now) {
 			continue
 		}
 		a.Seen = time.Time{} // internal: keep it out of the document

@@ -21,6 +21,9 @@ func newTestStore(t *testing.T, path string) *Store {
 	t.Helper()
 	s := NewStore(path)
 	s.now = func() time.Time { return t0 }
+	// NewStore published with the real clock; republish on the test clock so
+	// time-based rules (alert window, expiry) don't depend on today's date.
+	s.Update(func(*Inputs) {})
 	return s
 }
 
@@ -258,5 +261,16 @@ func TestAgents(t *testing.T) {
 	s.Update(func(*Inputs) {})
 	if ag := s.Get().Agents; len(ag) != 0 {
 		t.Fatalf("finished session should expire: %+v", ag)
+	}
+}
+
+func TestReturningAgentStartsFresh(t *testing.T) {
+	s := newTestStore(t, "")
+	s.AgentEvent("a", "/x/igris", "Notification")
+	later := t0.Add(agentIdleFor + time.Hour)
+	s.now = func() time.Time { return later }
+	s.AgentEvent("a", "/x/igris", "Notification") // same session, same state, after expiry
+	if ag := s.Get().Agents; len(ag) != 1 || !ag[0].Since.Equal(later) {
+		t.Fatalf("agents = %+v: a session back from expiry must not keep its old since", ag)
 	}
 }

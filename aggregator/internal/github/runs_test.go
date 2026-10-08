@@ -8,7 +8,8 @@ import (
 	"github.com/drilonrecica/scouter/aggregator/internal/state"
 )
 
-var t0 = time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+// Anchored to now: the store judges alert age by the real clock.
+var t0 = time.Now().UTC().Truncate(time.Hour)
 
 func wr(name, branch, sha, status, conclusion string, startMin, endMin int) workflowRun {
 	return workflowRun{
