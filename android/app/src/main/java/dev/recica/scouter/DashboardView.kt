@@ -14,6 +14,7 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalTime
 import kotlin.math.roundToInt
 
 /**
@@ -74,6 +75,9 @@ class DashboardView(ctx: Context) : View(ctx) {
     /** Power each project had before its last change, for "9000 → 6750" on alerts. */
     private val previousPower = mutableMapOf<String, Int>()
 
+    /** Everything just turned green: the Dragon Balls wish shows until then. */
+    private var wishUntil: Instant = Instant.EPOCH
+
     private val scanner = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 900
         interpolator = DecelerateInterpolator()
@@ -96,6 +100,10 @@ class DashboardView(ctx: Context) : View(ctx) {
         previousPower.keys.retainAll(new.projects.map { it.fullName }.toSet())
         counting = changes
         invalidate()
+        if (Logic.wishStarts(old, new)) {
+            wishUntil = Instant.now().plusSeconds(WISH_SECONDS)
+            postDelayed({ invalidate() }, WISH_SECONDS * 1000 + 500) // and back to the stage
+        }
         if (old == null) return
         if (Logic.freshAlertVisible(new, dismissed).not()) sweep?.scan()
         if (changes.isNotEmpty()) {
@@ -141,7 +149,8 @@ class DashboardView(ctx: Context) : View(ctx) {
     /** Aura colour = the LED's verdict, so screen and light always agree. */
     private fun background(c: Canvas, s: DashState, now: Instant) {
         val bg = s.settings
-        val aura = if (!bg.aura) null else when (Logic.led(s, Hub.connected, dismissed)) {
+        val led = Logic.led(s, Hub.connected, dismissed)
+        val aura = if (!bg.aura) null else when (led) {
             Logic.Led.GREEN -> GREEN
             Logic.Led.AMBER -> AMBER
             Logic.Led.RED -> RED
@@ -151,7 +160,16 @@ class DashboardView(ctx: Context) : View(ctx) {
         // The view is pixel-shifted; the backdrop covers that margin too.
         c.save()
         c.translate(-translationX, -translationY)
-        backdrop.draw(c, Backdrop.Spec(width, height, aura, bg.stars, bg.mesh, now.epochSecond / 60))
+        val stage = if (bg.stage) Logic.focus(s, now)?.let { Logic.stageFor(it.fullName) } else null
+        backdrop.draw(c, Backdrop.Spec(
+            width, height, aura, bg.stars, bg.mesh,
+            // A stage keeps its own fixed stars: no reason to rebuild it every minute.
+            starSeed = if (stage != null) 0 else now.epochSecond / 60,
+            stage = stage,
+            hour = LocalTime.now().hour,
+            weather = if (bg.weather) led else null,
+            wish = bg.stage && now.isBefore(wishUntil),
+        ))
         c.restore()
     }
 
@@ -529,6 +547,7 @@ class DashboardView(ctx: Context) : View(ctx) {
 
     companion object {
         const val CARD_SECONDS = 60L
+        const val WISH_SECONDS = 60L
         private const val BG = 0xFF000000.toInt()
         private const val PRIMARY = 0xFFE8E8E8.toInt()
         private const val SECONDARY = 0xFF8C8C8C.toInt()

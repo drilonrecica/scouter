@@ -2,6 +2,8 @@ package dev.recica.scouter
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
@@ -21,7 +23,16 @@ import kotlin.random.Random
  * GPU memory (the bitmap and its texture copy).
  */
 class Backdrop(private val density: Float) {
-    data class Spec(val w: Int, val h: Int, val aura: Int?, val stars: Boolean, val mesh: Boolean, val starSeed: Long)
+    data class Spec(
+        val w: Int, val h: Int, val aura: Int?, val stars: Boolean, val mesh: Boolean, val starSeed: Long,
+        /** A stage scene instead of stars and mesh; [hour] tints its sky. */
+        val stage: Stage? = null,
+        val hour: Int = 0,
+        /** Status weather on the stage, by the LED it mirrors; null = none. */
+        val weather: Logic.Led? = null,
+        /** The Dragon Balls wish replaces the stage while it lasts. */
+        val wish: Boolean = false,
+    )
 
     private var spec: Spec? = null
     private var bitmap: Bitmap? = null
@@ -51,9 +62,46 @@ class Backdrop(private val density: Float) {
         bmp.eraseColor(0xFF000000.toInt())
         val c = Canvas(bmp)
         c.scale(1f / SCALE, 1f / SCALE) // draw in full-size coordinates
-        if (s.mesh) mesh(c, s)
-        if (s.stars) stars(c, s)
+        if (s.wish || s.stage != null) {
+            scene(c, s)
+        } else {
+            if (s.mesh) mesh(c, s)
+            if (s.stars) stars(c, s)
+        }
         s.aura?.let { aura(c, s, it) }
+    }
+
+    private var sceneBitmap: Bitmap? = null
+
+    // Scenes are stored dim and lifted to the chosen brightness on the way in.
+    private val sceneBlit = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(SCENE_GAIN, SCENE_GAIN, SCENE_GAIN, 1f) })
+    }
+
+    /**
+     * The stage (or the wish), painted at a third of the screen's resolution
+     * and scaled up: the filtering softens it like a slight blur, for free.
+     * Weather goes on top, sharp, in full-size coordinates.
+     */
+    private fun scene(c: Canvas, s: Spec) {
+        val sw = (s.w / 3).coerceAtLeast(1)
+        val sh = (s.h / 3).coerceAtLeast(1)
+        val bmp = sceneBitmap?.takeIf { it.width == sw && it.height == sh } ?: Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888).also {
+            sceneBitmap?.recycle()
+            sceneBitmap = it
+        }
+        bmp.eraseColor(0xFF000000.toInt())
+        val sc = Canvas(bmp)
+        sc.scale(sw / Scenes.W, sh / Scenes.H)
+        if (s.wish) Scenes.wish(sc) else s.stage?.let { Scenes.draw(sc, it, s.hour) }
+        dst.set(0f, 0f, s.w.toFloat(), s.h.toFloat())
+        c.drawBitmap(bmp, null, dst, sceneBlit)
+        if (!s.wish) s.weather?.let { led ->
+            c.save()
+            c.scale(s.w / Scenes.W, s.h / Scenes.H)
+            Scenes.weather(c, led, Scenes.ground(s.stage))
+            c.restore()
+        }
     }
 
     /** Edge glow: four fading bands and soft corners, max alpha ~0x30. */
@@ -123,5 +171,6 @@ class Backdrop(private val density: Float) {
 
     private companion object {
         const val SCALE = 2
+        const val SCENE_GAIN = 1.6f // the brightness picked on the sketchboard
     }
 }

@@ -21,6 +21,15 @@ object Logic {
     /** Every judged project flawless: the Grid gets to say it. */
     fun allFlawless(ps: List<Project>): Boolean = ps.any { it.power != null } && ps.all { it.power == null || it.power == MAX_POWER }
 
+    /** The stage a project is fought on: fixed per project, spread over all stages. */
+    fun stageFor(fullName: String): Stage = Stage.entries[Math.floorMod(fullName.hashCode(), Stage.entries.size)]
+
+    /** Every Grid project passing, and at least one to pass. */
+    private fun allGreen(s: DashState): Boolean = grid(s).let { g -> g.isNotEmpty() && g.all { status(it) == Status.SUCCESS } }
+
+    /** The moment everything turns green summons the dragon; staying green does not. */
+    fun wishStarts(old: DashState?, new: DashState): Boolean = old != null && !allGreen(old) && allGreen(new)
+
     /** Projects whose power changed between two documents: fullName to (old, new). */
     fun powerChanges(old: DashState?, new: DashState): Map<String, Pair<Int, Int>> {
         val before = old?.projects?.associate { it.fullName to it.power }.orEmpty()

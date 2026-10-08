@@ -51,6 +51,8 @@ data class Settings(
     val aura: Boolean = true,
     val stars: Boolean = true,
     val mesh: Boolean = false,
+    val stage: Boolean = true,
+    val weather: Boolean = true,
     val alertHours: Int = 12,
     val wave: Boolean = true,
     val briefing: Boolean = true,
@@ -63,7 +65,7 @@ data class Settings(
         .put("rotate_minutes", rotateMinutes)
         .put("schedule", JSONObject().put("days", days).put("on", on).put("off", off))
         .put("kiosk", kiosk)
-        .put("background", JSONObject().put("aura", aura).put("stars", stars).put("mesh", mesh))
+        .put("background", JSONObject().put("aura", aura).put("stars", stars).put("mesh", mesh).put("stage", stage).put("weather", weather))
         .put("alert_hours", alertHours)
         .put("wave", wave)
         .put("briefing", briefing)
@@ -88,6 +90,8 @@ data class Settings(
                 aura = bg?.optBoolean("aura", d.aura) ?: d.aura,
                 stars = bg?.optBoolean("stars", d.stars) ?: d.stars,
                 mesh = bg?.optBoolean("mesh", d.mesh) ?: d.mesh,
+                stage = bg?.optBoolean("stage", d.stage) ?: d.stage,
+                weather = bg?.optBoolean("weather", d.weather) ?: d.weather,
                 alertHours = o.optInt("alert_hours", d.alertHours),
                 wave = o.optBoolean("wave", d.wave),
                 briefing = o.optBoolean("briefing", d.briefing),

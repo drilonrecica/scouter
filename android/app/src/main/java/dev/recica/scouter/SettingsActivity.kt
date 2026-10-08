@@ -109,6 +109,8 @@ class SettingsActivity : Activity() {
         toggle("Ki aura (edge glow in the status colour)", draft.aura) { draft = draft.copy(aura = it) }
         toggle("Star field (re-seeded every minute)", draft.stars) { draft = draft.copy(stars = it) }
         toggle("Hex lens mesh", draft.mesh) { draft = draft.copy(mesh = it) }
+        toggle("Stage (scene picked by the Focus project; replaces stars and mesh)", draft.stage) { draft = draft.copy(stage = it) }
+        toggle("Status weather on the stage", draft.weather) { draft = draft.copy(weather = it) }
 
         section("CONNECTION")
         val host = runCatching { Uri.parse(Prefs(this).url).host }.getOrNull() ?: "—"

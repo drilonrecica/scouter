@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -131,5 +132,21 @@ func TestAlertWindowFollowsSettings(t *testing.T) {
 	}
 	if len(s.Get().Alerts) != 0 {
 		t.Fatal("alert should end when the window shrinks below its age")
+	}
+}
+
+func TestOlderSettingsFileGetsTheStageAndWeather(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	old := `{"hidden":[],"favorites":[],"focus_mode":"latest","rotate_minutes":5,"schedule":{"days":"1-5","on":"09:00","off":"19:00"},
+		"background":{"aura":false,"stars":true,"mesh":true},"alert_hours":12}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bg := loadSettings(path).Background
+	if bg.Aura || !bg.Stars || !bg.Mesh {
+		t.Errorf("saved choices lost: %+v", bg)
+	}
+	if !bg.Stage || !bg.Weather {
+		t.Errorf("new layers should default on: %+v", bg)
 	}
 }

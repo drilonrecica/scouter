@@ -40,6 +40,10 @@ type Background struct {
 	Aura  bool `json:"aura"`
 	Stars bool `json:"stars"`
 	Mesh  bool `json:"mesh"`
+	// Stage draws an original Dragon Ball-inspired scene behind the HUD,
+	// chosen by the Focus project; Weather overlays the status on it.
+	Stage   bool `json:"stage"`
+	Weather bool `json:"weather"`
 }
 
 const (
@@ -58,7 +62,7 @@ func DefaultSettings() Settings {
 		FocusMode:     FocusLatest,
 		RotateMinutes: 5,
 		Schedule:      Schedule{Days: "1-5", On: "09:00", Off: "19:00"},
-		Background:    Background{Aura: true, Stars: true},
+		Background:    Background{Aura: true, Stars: true, Stage: true, Weather: true},
 		AlertHours:    12,
 		Wave:          true,
 		Briefing:      true,

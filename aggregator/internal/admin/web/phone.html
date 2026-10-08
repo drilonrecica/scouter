@@ -30,6 +30,8 @@
   <label class="row"><span>Ki aura</span><input type="checkbox" name="aura" {{if .Background.Aura}}checked{{end}}><span class="hint">Edge glow in the overall status colour</span></label>
   <label class="row"><span>Star field</span><input type="checkbox" name="stars" {{if .Background.Stars}}checked{{end}}><span class="hint">Re-seeded every minute</span></label>
   <label class="row"><span>Hex lens mesh</span><input type="checkbox" name="mesh" {{if .Background.Mesh}}checked{{end}}></label>
+  <label class="row"><span>Stage</span><input type="checkbox" name="stage" {{if .Background.Stage}}checked{{end}}><span class="hint">A scene behind the HUD (Namek, wasteland, tournament, Lookout, Tournament of Power), picked by the Focus project; replaces stars and mesh</span></label>
+  <label class="row"><span>Status weather</span><input type="checkbox" name="weather" {{if .Background.Weather}}checked{{end}}><span class="hint">On the stage: sparks while building, a storm when something breaks</span></label>
 </div>
 {{end}}
 <button>SAVE</button>

@@ -95,7 +95,7 @@ class LogicTest {
     @Test
     fun settingsRoundTrip() {
         val s = Settings(hidden = listOf("me/x"), favorites = listOf("me/a", "me/b"), focusMode = "rotate", rotateMinutes = 7,
-            days = "6-2", on = "08:30", off = "20:15", kiosk = true, aura = false, stars = true, mesh = true, alertHours = 3,
+            days = "6-2", on = "08:30", off = "20:15", kiosk = true, aura = false, stars = true, mesh = true, stage = false, weather = false, alertHours = 3,
             wave = false, briefing = false)
         assertEquals(s, Settings.parse(org.json.JSONObject(s.toJson())))
         assertEquals(Settings(), Settings.parse(null)) // older server: defaults
@@ -109,6 +109,26 @@ class LogicTest {
         val g = Logic.grid(state(*ps.toTypedArray()))
         assertEquals(12, g.size) // more than fit on screen: the Grid scrolls
         assertEquals(listOf("broken", "busy", "p1", "p2", "p3"), g.take(5).map { it.name })
+    }
+
+    @Test
+    fun eachProjectKeepsItsStageAndAllStagesGetUsed() {
+        assertEquals(Logic.stageFor("me/igris"), Logic.stageFor("me/igris"))
+        val used = (1..40).map { Logic.stageFor("me/project-$it") }.toSet()
+        assertEquals(Stage.entries.toSet(), used)
+    }
+
+    @Test
+    fun theWishStartsOnlyWhenEverythingTurnsGreen() {
+        val green = state(p("a", Status.SUCCESS), p("b", Status.SUCCESS))
+        val broken = state(p("a", Status.SUCCESS), p("b", Status.FAILURE))
+        val busy = state(p("a", Status.SUCCESS), p("b", Status.RUNNING))
+        assertTrue(Logic.wishStarts(broken, green))
+        assertTrue(Logic.wishStarts(busy, green))
+        assertFalse(Logic.wishStarts(green, green)) // already green: no repeat on every update
+        assertFalse(Logic.wishStarts(null, green)) // not on app start
+        assertFalse(Logic.wishStarts(green, broken))
+        assertFalse(Logic.wishStarts(broken, state())) // nothing to be green
     }
 
     @Test

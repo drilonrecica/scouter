@@ -504,7 +504,8 @@ func (u *ui) savePhone(w http.ResponseWriter, r *http.Request, _ string, s *sess
 	set.Schedule = state.Schedule{Days: f("day_from") + "-" + f("day_to"), On: f("on"), Off: f("off")}
 	set.Kiosk = f("kiosk") == "on"
 	set.AlertHours = num("alert_hours")
-	set.Background = state.Background{Aura: f("aura") == "on", Stars: f("stars") == "on", Mesh: f("mesh") == "on"}
+	set.Background = state.Background{Aura: f("aura") == "on", Stars: f("stars") == "on", Mesh: f("mesh") == "on",
+		Stage: f("stage") == "on", Weather: f("weather") == "on"}
 	set.Wave = f("wave") == "on"
 	set.Briefing = f("briefing") == "on"
 	u.save(w, r, s, set, "/admin/phone")
