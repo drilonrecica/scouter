@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Near-black, so the icon matches the AMOLED HUD but still shows its edge on a black wallpaper. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#0B1420" android:pathData="M0,0h108v108h-108z" />
-    <!-- faint range ticks, like the scale on the lens glass -->
-    <path android:strokeColor="#1A2E3A" android:strokeWidth="1" android:pathData="M30,86v4 M42,86v4 M54,84v6 M66,86v4 M78,86v4" />
+    <path android:fillColor="#05080B" android:pathData="M0,0h108v108h-108z" />
 </vector>

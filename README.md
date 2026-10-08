@@ -1,5 +1,7 @@
 # Scouter
 
+<img src="branding/header.svg" alt="Scouter: reads your CI's power level" width="900">
+
 > *"It's over 9000!"* (failed builds, hopefully not)
 
 Reads your CI's power level. A retired Samsung Galaxy S3 Neo sits on the desk

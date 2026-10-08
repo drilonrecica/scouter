@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" role="img" aria-label="Scouter">
+<path d="M30,36 L68,32 L80,44 L80,72 L30,73 Z" fill="#061412" stroke="#45B5A0" stroke-width="6"/>
+<circle cx="62" cy="51" r="13" fill="#E8E8E8" opacity=".22"/>
+<circle cx="62" cy="51" r="7.5" fill="#E8E8E8"/>
+<path d="M38,63 H50 M38,57 H45" stroke="#45B5A0" stroke-width="3.2" stroke-linecap="square" fill="none"/>
+</svg>

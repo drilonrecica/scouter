@@ -267,7 +267,7 @@ func (u *ui) loginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		return
 	}
-	u.login.Execute(w, map[string]string{})
+	u.login.Execute(w, map[string]any{"Favicon": favicon(ledIdle)})
 }
 
 func (u *ui) doLogin(w http.ResponseWriter, r *http.Request) {
@@ -275,7 +275,7 @@ func (u *ui) doLogin(w http.ResponseWriter, r *http.Request) {
 	if u.limited(ip) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(attemptWindow.Seconds())))
 		w.WriteHeader(http.StatusTooManyRequests)
-		u.login.Execute(w, map[string]string{"Error": "Too many attempts. Try again in a few minutes."})
+		u.login.Execute(w, map[string]any{"Favicon": favicon(ledIdle), "Error": "Too many attempts. Try again in a few minutes."})
 		return
 	}
 	if !sameOrigin(r) {
@@ -290,7 +290,7 @@ func (u *ui) doLogin(w http.ResponseWriter, r *http.Request) {
 		u.cfg.Log.Warn("admin login failed", "ip", ip)
 		time.Sleep(failDelay)
 		w.WriteHeader(http.StatusUnauthorized)
-		u.login.Execute(w, map[string]string{"Error": "Wrong password."})
+		u.login.Execute(w, map[string]any{"Favicon": favicon(ledIdle), "Error": "Wrong password."})
 		return
 	}
 	id := randomToken()
@@ -324,6 +324,7 @@ type page struct {
 	Title, Page, CSRF string
 	Flash             *flash
 	Data              any
+	Favicon           template.URL
 }
 
 func (u *ui) render(w http.ResponseWriter, s *session, name, title string, data any) {
@@ -332,7 +333,8 @@ func (u *ui) render(w http.ResponseWriter, s *session, name, title string, data 
 	s.flash = nil
 	u.mu.Unlock()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := u.pages[name].ExecuteTemplate(w, name+".html", page{Title: title, Page: name, CSRF: s.csrf, Flash: f, Data: data}); err != nil {
+	icon := favicon(led(u.cfg.Store.Get(), u.cfg.Store.Heartbeat(), u.now()))
+	if err := u.pages[name].ExecuteTemplate(w, name+".html", page{Title: title, Page: name, CSRF: s.csrf, Flash: f, Data: data, Favicon: icon}); err != nil {
 		u.cfg.Log.Error("render", "page", name, "err", err)
 	}
 }
@@ -369,7 +371,7 @@ func (u *ui) statusPage(w http.ResponseWriter, _ *http.Request, _ string, s *ses
 		ago := u.now().Sub(h.At)
 		data["Phone"] = h
 		data["PhoneSeen"] = humanize(ago) + " ago"
-		data["PhoneSilent"] = ago > 5*time.Minute
+		data["PhoneSilent"] = ago > phoneSilentAfter
 		data["PhoneHot"] = h.TempC > 45
 		data["PhoneMB"] = float64(h.PssKB) / 1024
 		data["PhoneUptime"] = humanize(time.Duration(h.UptimeS) * time.Second)
