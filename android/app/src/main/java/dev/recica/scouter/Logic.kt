@@ -62,11 +62,13 @@ object Logic {
     /**
      * The project Focus shows, per the server's focus mode:
      * latest = the aggregator's pick (newest activity); pinned = that repo;
-     * rotate = cycles the favorites every rotateMinutes. Falls back to latest
-     * whenever the chosen project is not in the document.
+     * rotate = cycles the favorites every rotateMinutes. A project tapped to
+     * ([manual]) wins over latest and rotate until the next push. Falls back
+     * to latest whenever the chosen project is not in the document.
      */
-    fun focus(s: DashState, now: Instant = Instant.now()): Project? {
+    fun focus(s: DashState, now: Instant = Instant.now(), manual: ManualFocus? = null): Project? {
         val byName = s.projects.associateBy { it.fullName }
+        manualProject(s, manual)?.let { return it }
         val chosen = when (s.settings.focusMode) {
             "pinned" -> byName[s.settings.pinned]
             "rotate" -> s.settings.favorites.mapNotNull { byName[it] }.takeIf { it.isNotEmpty() }?.let { favs ->
@@ -76,6 +78,28 @@ object Logic {
             else -> null
         }
         return chosen ?: byName[s.focus] ?: s.projects.firstOrNull()
+    }
+
+    /** A project tapped to in Focus, and the newest push when it was tapped. */
+    data class ManualFocus(val fullName: String, val asOf: Instant?)
+
+    /** The newest push across all projects: a later one hands Focus back to its mode. */
+    fun newestPush(s: DashState): Instant? = s.projects.mapNotNull { it.pushedAt }.maxOrNull()
+
+    /** The tapped project while it still applies: not LOCKED, still there, no push since. */
+    fun manualProject(s: DashState, manual: ManualFocus?): Project? {
+        if (manual == null || locked(s)) return null
+        val newest = newestPush(s)
+        if (newest != null && (manual.asOf == null || newest.isAfter(manual.asOf))) return null
+        return s.projects.firstOrNull { it.fullName == manual.fullName }
+    }
+
+    /** The project after [current] in Grid order, wrapping; the first one without a current. */
+    fun next(s: DashState, current: Project?): Project? {
+        val order = grid(s)
+        if (order.isEmpty()) return null
+        val i = order.indexOfFirst { it.fullName == current?.fullName }
+        return order[(i + 1) % order.size]
     }
 
     /** Whether Focus is held on one project (shown as LOCKED). */

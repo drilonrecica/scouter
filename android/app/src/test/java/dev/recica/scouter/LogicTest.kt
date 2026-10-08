@@ -112,6 +112,35 @@ class LogicTest {
     }
 
     @Test
+    fun tapGoesToTheNextProjectInGridOrderAndWraps() {
+        val s = state(p("a", Status.SUCCESS), p("b", Status.FAILURE), p("c", Status.SUCCESS))
+        // Grid order puts the broken project first: b, a, c.
+        assertEquals("me/a", Logic.next(s, s.projects.first { it.name == "b" })!!.fullName)
+        assertEquals("me/c", Logic.next(s, s.projects.first { it.name == "a" })!!.fullName)
+        assertEquals("me/b", Logic.next(s, s.projects.first { it.name == "c" })!!.fullName)
+        assertNull(Logic.next(state(), null))
+    }
+
+    @Test
+    fun aTappedProjectHoldsUntilTheNextPush() {
+        val base = state(p("a", Status.SUCCESS), p("b", Status.SUCCESS), p("c", Status.SUCCESS))
+        val manual = Logic.ManualFocus("me/c", Logic.newestPush(base))
+        assertEquals("me/c", Logic.focus(base, now, manual)!!.fullName)
+
+        val rotate = base.copy(settings = Settings(focusMode = "rotate", favorites = listOf("me/a", "me/b")))
+        assertEquals("me/c", Logic.focus(rotate, now, manual)!!.fullName) // beats rotation too
+
+        val pinned = base.copy(settings = Settings(focusMode = "pinned", pinned = "me/b"))
+        assertEquals("me/b", Logic.focus(pinned, now, manual)!!.fullName) // LOCKED wins
+
+        val pushed = base.copy(projects = base.projects.map { if (it.name == "a") it.copy(pushedAt = now.plusSeconds(30)) else it })
+        assertEquals("me/a", Logic.focus(pushed, now, manual)!!.fullName) // a push hands Focus back
+
+        val gone = base.copy(projects = base.projects.filter { it.name != "c" })
+        assertEquals("me/a", Logic.focus(gone, now, manual)!!.fullName)
+    }
+
+    @Test
     fun eachProjectKeepsItsStageAndAllStagesGetUsed() {
         assertEquals(Logic.stageFor("me/igris"), Logic.stageFor("me/igris"))
         val used = (1..40).map { Logic.stageFor("me/project-$it") }.toSet()

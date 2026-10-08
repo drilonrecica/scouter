@@ -23,7 +23,7 @@ import kotlin.random.Random
  * Full-screen kiosk; configuration arrives through [ConfigReceiver], never
  * through this exported activity's intent.
  * Swipe left/right: Focus ⇄ Grid. Long-press the top strip: settings. Long-press elsewhere
- * in Focus: pin/unpin. Tap a tile: pin it. Drag the Grid up/down: scroll. Tap an alert: dismiss.
+ * in Focus: pin/unpin. Tap in Focus: next project. Tap a tile: pin it. Drag the Grid up/down: scroll. Tap an alert: dismiss.
  */
 class DashboardActivity : Activity() {
     private lateinit var prefs: Prefs
@@ -205,6 +205,12 @@ class DashboardActivity : Activity() {
                     view.mode = DashboardView.Mode.FOCUS
                     view.invalidate()
                 }
+            } else if (view.mode == DashboardView.Mode.FOCUS && !Logic.locked(s)) {
+                // Next project, held until the next push hands Focus back to its mode.
+                Logic.next(s, Logic.focus(s, manual = Hub.manualFocus))?.let { p ->
+                    Hub.manualFocus = Logic.ManualFocus(p.fullName, Logic.newestPush(s))
+                    view.invalidate()
+                }
             }
             return true
         }
@@ -217,7 +223,8 @@ class DashboardActivity : Activity() {
             }
             if (view.mode != DashboardView.Mode.FOCUS) return
             val s = Hub.state ?: return
-            val current = Logic.focus(s) ?: return
+            val current = Logic.focus(s, manual = Hub.manualFocus) ?: return // pin what is on screen
+            Hub.manualFocus = null
             save(Logic.togglePin(s.settings, current.fullName))
         }
 

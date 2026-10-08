@@ -160,7 +160,7 @@ class DashboardView(ctx: Context) : View(ctx) {
         // The view is pixel-shifted; the backdrop covers that margin too.
         c.save()
         c.translate(-translationX, -translationY)
-        val stage = if (bg.stage) Logic.focus(s, now)?.let { Logic.stageFor(it.fullName) } else null
+        val stage = if (bg.stage) Logic.focus(s, now, Hub.manualFocus)?.let { Logic.stageFor(it.fullName) } else null
         backdrop.draw(c, Backdrop.Spec(
             width, height, aura, bg.stars, bg.mesh,
             // A stage keeps its own fixed stars: no reason to rebuild it every minute.
@@ -176,7 +176,7 @@ class DashboardView(ctx: Context) : View(ctx) {
     // ---- focus ------------------------------------------------------------------
 
     private fun focus(c: Canvas, s: DashState, now: Instant) {
-        val p = Logic.focus(s) ?: return centered(c, "NO TARGETS")
+        val p = Logic.focus(s, now, Hub.manualFocus) ?: return centered(c, "NO TARGETS")
         val pad = dp(32f)
         val w = width.toFloat()
         val split = w * 0.62f
@@ -227,6 +227,7 @@ class DashboardView(ctx: Context) : View(ctx) {
         var ry = dp(96f)
         val tracking = when {
             Logic.locked(s) -> "◉ LOCKED"
+            Logic.manualProject(s, Hub.manualFocus) != null -> "▸ MANUAL"
             s.settings.focusMode == "rotate" -> "↻ ROTATING"
             else -> "◎ TRACKING"
         }

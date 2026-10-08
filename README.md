@@ -23,7 +23,7 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 
 | | |
 |---|---|
-| **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`), a pinned project (`LOCKED`) or cycles your favorites (`ROTATING`). Long-press to pin/unpin. |
+| **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`), a pinned project (`LOCKED`) or cycles your favorites (`ROTATING`). Tap for the next project (`MANUAL`); the next push hands Focus back. Long-press to pin/unpin. |
 | **Grid** | The most relevant projects, 9 at a time: favorites first in your order, then failing, running, the rest. Drag up for more; it returns to the top after a minute. Power levels and the average. Tap a tile to pin it. |
 | **Backdrop** | A stage behind the HUD, picked by the Focus project: Namek, the wasteland, the tournament ring, Kami's Lookout or the Tournament of Power, drawn in code as dim, softened silhouettes, with the sky tinted by the hour. Status weather on top: ki sparks while a build runs, a storm with a cracked ground on a fresh failure, static without a connection. When everything turns green, the seven Dragon Balls and the dragon take over for a minute. Plus the ki aura (edge glow in the LED's colour). Switch the stage off for the classic star field and hex lens mesh. Dim by design. |
 | **Settings** | Long-press the top strip. Favorites, hidden repos, focus mode, screen hours, kiosk, backdrop, wave, briefing. |

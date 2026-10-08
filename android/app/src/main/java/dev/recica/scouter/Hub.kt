@@ -34,6 +34,9 @@ object Hub {
     var briefingUntil: Instant = Instant.EPOCH
     var briefingSince: Instant? = null
 
+    /** A project tapped to in Focus; [Logic.manualProject] decides whether it still applies. */
+    var manualFocus: Logic.ManualFocus? = null
+
     /** When each alert was first seen on this phone: drives card (fresh) vs banner. */
     val alertSeenAt = mutableMapOf<String, Instant>()
 
