@@ -94,8 +94,17 @@ class DashboardActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setTurnScreenOn(true)
+        appliedKiosk = null // brought back by the service: re-apply kiosk
+        redraw()
         view.invalidate()
     }
+
+    /**
+     * The dashboard is the root screen: Back has nowhere to go. In kiosk mode
+     * finishing it would also end lock task, so Back is ignored outright.
+     */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {}
 
     override fun onResume() {
         super.onResume()

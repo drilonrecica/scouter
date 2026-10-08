@@ -277,6 +277,12 @@ class StreamService : Service() {
         if (!want && was) sleepScreen()
 
         setLed(Logic.led(s, Hub.connected, dismissed))
+
+        // Self-healing kiosk: whatever closed the dashboard, bring it back so
+        // it can lock the phone again (it re-applies kiosk on resume).
+        if (s?.settings?.kiosk == true && want && Kiosk.isOwner(this) && !Kiosk.isLocked(this)) {
+            startActivity(Intent(this, DashboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        }
     }
 
     /**
