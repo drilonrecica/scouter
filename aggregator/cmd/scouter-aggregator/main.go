@@ -71,7 +71,7 @@ func run(log *slog.Logger) error {
 	poller := github.NewPoller(gh, store, ignore, log)
 	go poller.Run(ctx)
 	iconDir := filepath.Join(dataDir, "icons")
-	go icons.NewPoller(gh, &http.Client{Timeout: 15 * time.Second}, store, iconDir, log).Run(ctx)
+	go icons.NewPoller(gh, icons.SiteClient(), store, iconDir, log).Run(ctx)
 
 	coolifyURL, coolifyToken := os.Getenv("SCOUTER_COOLIFY_URL"), os.Getenv("SCOUTER_COOLIFY_TOKEN")
 	if coolifyURL != "" && coolifyToken != "" {
