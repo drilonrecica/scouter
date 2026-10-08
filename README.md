@@ -2,6 +2,8 @@
 
 <img src="branding/header.svg" alt="Scouter: reads your CI's power level" width="900">
 
+**[drilonrecica.github.io/scouter](https://drilonrecica.github.io/scouter/)**: what it is, how it looks, how to set it up.
+
 > *"It's over 9000!"* (failed builds, hopefully not)
 
 Reads your CI's power level. A retired Samsung Galaxy S3 Neo sits on the desk

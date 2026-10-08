@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scouter · reads your CI's power level</title>
+<meta name="description" content="A retired Galaxy S3 Neo on the desk as a CI build light: GitHub Actions status of your most active repos on an AMOLED Scouter HUD, with the RGB notification LED as a status light.">
+<meta property="og:title" content="Scouter">
+<meta property="og:description" content="Reads your CI's power level. A retired phone on the desk shows your GitHub CI as a Scouter HUD.">
+<meta property="og:image" content="https://drilonrecica.github.io/scouter/og.png">
+<meta property="og:url" content="https://drilonrecica.github.io/scouter/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#top" aria-label="Scouter, back to top"><img src="mark.svg" alt="" width="28" height="28"><span>SCOUTER</span></a>
+  <nav aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#screens">Screens</a>
+    <a href="#stages">Stages</a>
+    <a href="#setup">Set it up</a>
+    <a class="gh" href="https://github.com/drilonrecica/scouter">GitHub ↗</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">SCAN ▸ <b>YOUR CI</b> · AMOLED HUD · RGB LED</p>
+      <h1>Reads your CI's power&nbsp;level.</h1>
+      <p class="lede">A retired Samsung Galaxy S3 Neo sits on the desk and shows the GitHub Actions status of your most active repos on its AMOLED screen, as a Scouter HUD. Its RGB notification LED becomes your build light. When something breaks, the lens cracks: <span class="mono red">POWER LEVEL DROPPING</span>.</p>
+      <div class="cta">
+        <a class="btn primary" href="#setup">Set it up</a>
+        <a class="btn" href="https://github.com/drilonrecica/scouter">Source on GitHub</a>
+      </div>
+      <dl class="specs">
+        <div><dt>Phone app</dt><dd>Kotlin, no dependencies, ~190 KB, ~27 MB RAM</dd></div>
+        <div><dt>Aggregator</dt><dd>Go, standard library only, one container</dd></div>
+        <div><dt>Power level</dt><dd>0–9000: share of the last 20 default-branch commits that passed</dd></div>
+      </dl>
+    </div>
+    <figure class="hero-phone">
+      <div class="device" id="device">
+        <canvas id="hero" width="1280" height="720" aria-label="The Scouter phone showing the Focus screen in front of a stage"></canvas>
+        <span class="led" id="led" aria-hidden="true"></span>
+      </div>
+      <figcaption>
+        <div class="chips" role="group" aria-label="Status to show on the phone" id="status-chips"></div>
+        <div class="chips" role="group" aria-label="Stage behind the HUD" id="stage-chips"></div>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="band" id="how">
+    <div class="head">
+      <p class="eyebrow">01 · HOW IT WORKS</p>
+      <h2>One small server, one old phone.</h2>
+      <p>The aggregator polls GitHub with ETags, so quiet repos cost nothing against the rate limit. It combines each commit's workflows into one status and streams a small JSON document to the phone over server-sent events. The phone draws it and drives the LED. That's the whole system.</p>
+    </div>
+    <div class="flow" aria-label="Data flow">
+      <div class="node"><span class="k">SOURCE</span><b>GitHub API</b><span>Actions runs, pushes, pull requests</span></div>
+      <div class="arrow" aria-hidden="true">▸</div>
+      <div class="node hi"><span class="k">AGGREGATOR</span><b>Go on Coolify</b><span>combines, ranks, scores power levels, finds project icons</span></div>
+      <div class="arrow" aria-hidden="true">▸ SSE ▸</div>
+      <div class="node"><span class="k">PHONE</span><b>Kotlin on the S3 Neo</b><span>Focus, Grid and Agents screens, the RGB LED</span></div>
+      <div class="side">
+        <div class="node small"><span class="k">OPTIONAL</span><b>Coolify</b><span>deploy status beside CI</span></div>
+        <div class="node small"><span class="k">OPTIONAL</span><b>Claude Code hooks</b><span>agent sessions: waiting, working, done</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="screens">
+    <div class="head">
+      <p class="eyebrow">02 · SCREENS</p>
+      <h2>Swipe between three screens. Alerts take over.</h2>
+    </div>
+    <div class="screens">
+      <figure><canvas class="shot" data-shot="focus" width="640" height="360" aria-label="Focus screen"></canvas>
+        <figcaption><b>Focus</b> One project, large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs and power level. Follows your latest push, a pinned project or your favourites. Tap for the next project; long-press to pin.</figcaption></figure>
+      <figure><canvas class="shot" data-shot="grid" width="640" height="360" aria-label="Grid screen"></canvas>
+        <figcaption><b>Grid</b> Your most relevant projects, nine at a time: favourites first, then failing, running, the rest. Drag for more. All at 9000 earns an <span class="mono green">IT'S OVER 9000!</span></figcaption></figure>
+      <figure><canvas class="shot" data-shot="agents" width="640" height="360" aria-label="Agents screen"></canvas>
+        <figcaption><b>Agents</b> Your Claude Code sessions as WAITING, WORKING or DONE. A waiting session turns the LED blue, so you know when an agent needs you.</figcaption></figure>
+      <figure><canvas class="shot" data-shot="alert" width="640" height="360" aria-label="Alert card"></canvas>
+        <figcaption><b>Alert</b> A new failure on a default branch cracks the lens for a minute and wakes the screen. Long-standing red builds are deliberately not alerts.</figcaption></figure>
+    </div>
+    <ul class="extras">
+      <li><b>Morning briefing.</b> When the screen turns on, what broke, recovered and deployed overnight.</li>
+      <li><b>Wave to wake.</b> At night, wave over the phone to see the dashboard for 20 seconds.</li>
+      <li><b>Deploys.</b> With Coolify connected: each repo's latest deployment beside its CI, and a warning when it shipped a commit whose CI failed.</li>
+      <li><b>Project icons.</b> Found in the repo or on the deployed site, shown dimmed beside the name.</li>
+      <li><b>History.</b> A 14-day power sparkline under PWR.</li>
+      <li><b>Over the air.</b> One command builds, publishes and installs a new version on the phone.</li>
+    </ul>
+  </section>
+
+  <section class="band" id="led-section">
+    <div class="head">
+      <p class="eyebrow">03 · STATUS LIGHT</p>
+      <h2>Readable from across the room, screen off.</h2>
+      <p>The notification LED only goes red for fresh trouble. With several long-red repos, "any failure" would keep it red forever, and a light that is always red means nothing.</p>
+    </div>
+    <div class="leds">
+      <div class="ledrow"><span class="dot" style="--c:var(--red)"></span><b>Red</b><span>an undismissed alert</span></div>
+      <div class="ledrow"><span class="dot" style="--c:var(--blue)"></span><b>Blue</b><span>an agent waits for you</span></div>
+      <div class="ledrow"><span class="dot" style="--c:var(--amber)"></span><b>Amber</b><span>a build is running</span></div>
+      <div class="ledrow"><span class="dot" style="--c:var(--green)"></span><b>Green</b><span>all quiet</span></div>
+      <div class="ledrow"><span class="dot" style="--c:var(--purple)"></span><b>Purple</b><span>no connection</span></div>
+    </div>
+  </section>
+
+  <section class="band" id="stages">
+    <div class="head">
+      <p class="eyebrow">04 · STAGES &amp; WEATHER</p>
+      <h2>Every project gets its own battlefield.</h2>
+      <p>Behind the HUD sits a stage picked by the Focus project, with its sky tinted by the hour. The weather mirrors the LED: ki sparks while a build runs, a storm and a cracked ground on a fresh failure, static without a link. When the whole Grid turns green, the seven Dragon Balls appear for a minute. Every scene is an original drawing made in code, kept dim, and only redrawn when something changes.</p>
+    </div>
+    <div class="stages" id="stage-gallery"></div>
+  </section>
+
+  <section class="band" id="design">
+    <div class="head">
+      <p class="eyebrow">05 · DESIGN</p>
+      <h2>Rules for a screen that is on all day.</h2>
+    </div>
+    <div class="rules">
+      <div><h3>Black stays black.</h3><p>Chrome is thin teal lines, deliberately bluer than the green that means "passing". An AMOLED pixel that is black is off.</p></div>
+      <div><h3>Status is never decoration.</h3><p>Status words stay large and in their colours. The HUD only frames them, and icons and scenes are dimmed so status stays the brightest thing on screen.</p></div>
+      <div><h3>Animation only on change.</h3><p>A new state sweeps a scan line over the lens and counts changed power levels for under a second. Otherwise nothing moves, except a ±4 px burn-in shift once a minute.</p></div>
+      <div><h3>Off when you are.</h3><p>The screen follows a schedule (Mon–Fri 09:00–19:00 by default) and only wakes at night for an alert or a wave.</p></div>
+    </div>
+  </section>
+
+  <section class="band" id="setup">
+    <div class="head">
+      <p class="eyebrow">06 · SET IT UP</p>
+      <h2>An evening's work, if you have an old Android phone.</h2>
+      <p>Any Android 9+ phone runs the app. The status LED needs a phone that still has a notification LED, and a ROM that honours notification light colours. Scouter is built against the S3 Neo on LineageOS 19.1.</p>
+    </div>
+    <ol class="steps">
+      <li>
+        <h3>Run the aggregator</h3>
+        <p>Deploy <code>aggregator/</code> anywhere that runs a container. On Coolify: build pack <i>Dockerfile</i>, base directory <code>/aggregator</code>, port 8080, a persistent volume on <code>/data</code>, and leave Coolify's health check off (the image is distroless).</p>
+        <div class="envs">
+          <div><code>SCOUTER_TOKEN</code><span>required: the bearer token the phone sends</span></div>
+          <div><code>SCOUTER_GITHUB_TOKEN</code><span>required: fine-grained PAT, read-only <i>Actions</i>, <i>Contents</i>, <i>Pull requests</i>, <i>Metadata</i></span></div>
+          <div><code>SCOUTER_ADMIN_PASSWORD</code><span>optional: enables the admin UI at <code>/admin/</code> (12+ characters)</span></div>
+          <div><code>SCOUTER_COOLIFY_URL</code> · <code>_TOKEN</code><span>optional: deploy status, read-only token</span></div>
+          <div><code>SCOUTER_HOOK_TOKEN</code><span>optional: for Claude Code hooks</span></div>
+          <div><code>SCOUTER_RELEASE_TOKEN</code><span>optional: over-the-air releases</span></div>
+        </div>
+        <pre><code># try it locally
+cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make run</code></pre>
+      </li>
+      <li>
+        <h3>Install and configure the phone</h3>
+        <p>Configuration is only accepted over adb, so no other app on the phone can point it at a server of its own and collect the token.</p>
+        <pre><code>cd android && ./gradlew :app:assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
+adb shell appops set dev.recica.scouter SYSTEM_ALERT_WINDOW allow
+adb shell dpm set-active-admin dev.recica.scouter/.AdminReceiver
+adb shell "am broadcast -n dev.recica.scouter/.ConfigReceiver \
+  --es url https://scouter.example.com --es token SECRET \
+  --es schedule '1-5 09:00-19:00'"
+adb shell am start -n dev.recica.scouter/.DashboardActivity</code></pre>
+      </li>
+      <li>
+        <h3>Lock it to the desk (optional)</h3>
+        <p>As device owner, Scouter can run as a kiosk: no Home, no Recents, no notification shade. It can also install its own updates silently.</p>
+        <pre><code>adb shell dpm set-device-owner dev.recica.scouter/.AdminReceiver</code></pre>
+        <p>Switch <i>Kiosk</i> on in the admin UI or the phone's settings (long-press the top strip). Release device ownership there before uninstalling.</p>
+      </li>
+      <li>
+        <h3>Ship updates over the air</h3>
+        <pre><code>tools/release.sh        # bump, build, publish, wait for the phone
+# version 0.3.8 (11) -> 0.3.9 (12)
+# phone runs 0.3.9 (0.3.9 | installed)</code></pre>
+      </li>
+      <li>
+        <h3>Hook up Claude Code (optional)</h3>
+        <p>Copy <code>tools/claude-hook.sh</code> to <code>~/.config/scouter/hook.sh</code> and register it for <code>UserPromptSubmit</code>, <code>Notification</code>, <code>Stop</code> and <code>SessionEnd</code>. It forwards only the session id, the working directory and the event name, never prompts or transcripts.</p>
+      </li>
+    </ol>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="brand"><img src="mark.svg" alt="" width="22" height="22"><span>SCOUTER</span></div>
+  <p>MIT licensed. <a href="https://github.com/drilonrecica/scouter">github.com/drilonrecica/scouter</a></p>
+  <p class="fine">Inspired by the Scouter from Dragon Ball; not affiliated with or endorsed by Toei Animation or Shueisha. No official artwork is used: every scene and mark is an original drawing. Font: Share Tech Mono by Carrois Type Design, SIL Open Font License 1.1.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
