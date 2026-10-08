@@ -14,10 +14,12 @@ mark shows live state (the admin favicon).
 | `social-preview.png` | GitHub social preview, 1280×640 (Settings → Social preview); source in `social-preview.svg` |
 | `icon-512.png` | The launcher icon at 512 px, for anywhere that wants a square image |
 
-The launcher icon is the same drawing as `mark.svg`, written as a vector
-drawable in `android/app/src/main/res/drawable/ic_launcher_*.xml`. The admin
-favicon is the same drawing as `favicon.svg`, built in
-`aggregator/internal/admin/favicon.go`. Change the three together.
+Copies of the drawing live where each platform needs them; change them together:
+
+- `mark.svg`: the launcher icon, `android/app/src/main/res/drawable/ic_launcher_*.xml`
+- `favicon.svg`: the admin favicon (`aggregator/internal/admin/favicon.go`), the
+  admin header (`aggregator/internal/admin/web/mark.svg`, a plain copy) and the
+  status-bar icon (`android/app/src/main/res/drawable/ic_scouter.xml`, white only)
 
 ## Colours
 

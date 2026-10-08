@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A filled dot in a ring: the status light. -->
+<!-- Status-bar icon: the small brand mark (branding/favicon.svg), white only.
+     The group maps that file's 20..88 viewBox onto 24 units. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M12,2a10,10 0 1,0 0.01,0zM12,4a8,8 0 1,1 -0.01,0z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M12,7a5,5 0 1,0 0.01,0z" />
+    <group android:scaleX="0.3529" android:scaleY="0.3529" android:translateX="-7.06" android:translateY="-7.06">
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="7.5" android:strokeLineJoin="miter"
+            android:pathData="M30,38 L66,32 L79,45 L79,71 L30,73 Z" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M44.5,54 a10.5,10.5 0 1,0 21,0 a10.5,10.5 0 1,0 -21,0 z" />
+    </group>
 </vector>

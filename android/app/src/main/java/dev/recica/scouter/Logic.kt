@@ -8,7 +8,9 @@ import java.time.LocalTime
 
 /** Every decision the UI makes, kept free of Android so it is unit-testable. */
 object Logic {
-    const val GRID_TILES = 9
+    /** The Grid is 3 wide and shows 3 rows at a time; more rows scroll. */
+    const val GRID_COLS = 3
+    const val GRID_ROWS = 3
     const val MAX_POWER = 9000
 
     fun powerText(power: Int?): String = power?.toString() ?: "----"
@@ -80,8 +82,16 @@ object Logic {
         val favs = s.settings.favorites.mapNotNull { byName[it] }
         val rest = s.projects.filter { it.fullName !in s.settings.favorites }
             .withIndex().sortedWith(compareBy({ rank(status(it.value)) }, { it.index })).map { it.value }
-        return (favs + rest).take(GRID_TILES)
+        return favs + rest
     }
+
+    /** How far the Grid can scroll: every row past the first [GRID_ROWS]. */
+    fun gridMaxScroll(count: Int, rowPitch: Float): Float =
+        maxOf(0, (count + GRID_COLS - 1) / GRID_COLS - GRID_ROWS) * rowPitch
+
+    /** Where a released scroll comes to rest: the nearest whole row, within bounds. */
+    fun gridSnap(offset: Float, rowPitch: Float, max: Float): Float =
+        (Math.round(offset / rowPitch) * rowPitch).coerceIn(0f, max)
 
     /** Settings after a long-press on the Focus project: pin it, or release a pin. */
     fun togglePin(s: Settings, current: String): Settings =

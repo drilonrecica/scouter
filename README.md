@@ -24,7 +24,7 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 | | |
 |---|---|
 | **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`), a pinned project (`LOCKED`) or cycles your favorites (`ROTATING`). Long-press to pin/unpin. |
-| **Grid** | The 9 most relevant projects: favorites first in your order, then failing, running, the rest. Power levels and the average. Tap a tile to pin it. |
+| **Grid** | The most relevant projects, 9 at a time: favorites first in your order, then failing, running, the rest. Drag up for more; it returns to the top after a minute. Power levels and the average. Tap a tile to pin it. |
 | **Backdrop** | Ki aura (edge glow in the LED's colour), star field (re-seeded every minute) and hex lens mesh, each switchable. Dim by design. |
 | **Settings** | Long-press the top strip. Favorites, hidden repos, focus mode, screen hours, kiosk, backdrop, wave, briefing. |
 | **Deploys** | With Coolify connected: each repo's latest deployment (LIVE / DEPLOYING / DEPLOY FAILED) beside its CI, a grid glyph, and `⚠ DEPLOYED WHILE CI RED` when Coolify shipped a commit whose CI failed (it deploys on push without waiting). |

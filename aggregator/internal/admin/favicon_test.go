@@ -66,3 +66,15 @@ func TestLoginShowsIdleFaviconAndPagesShowStatus(t *testing.T) {
 		t.Error("status page should show the waiting (blue) favicon")
 	}
 }
+
+func TestHeaderMarkIsServedAsSVG(t *testing.T) {
+	srv, _ := newUI(t, pw)
+	resp, body := get(t, client(t, srv), srv, "/admin/static/mark.svg")
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/svg+xml" || !strings.HasPrefix(body, "<svg") {
+		t.Fatalf("mark: %d %q %.20q", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+	c, _ := login(t, srv)
+	if _, page := get(t, c, srv, "/admin/"); !strings.Contains(page, `src="/admin/static/mark.svg"`) {
+		t.Error("header should show the mark")
+	}
+}

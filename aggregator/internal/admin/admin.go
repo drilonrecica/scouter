@@ -122,6 +122,11 @@ func New(cfg Config) http.Handler {
 		b, _ := web.ReadFile("web/admin.css")
 		w.Write(b)
 	})
+	mux.HandleFunc("GET /admin/static/mark.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		b, _ := web.ReadFile("web/mark.svg")
+		w.Write(b)
+	})
 	mux.HandleFunc("GET /admin/login", u.loginPage)
 	mux.HandleFunc("POST /admin/login", u.doLogin)
 	mux.Handle("POST /admin/logout", u.authed(u.doLogout))

@@ -348,16 +348,21 @@ class DashboardView(ctx: Context) : View(ctx) {
         c.drawText(right, w - pad - rp.measureText(right), headY, rp)
 
         val gap = dp(14f)
-        val cols = 3
-        val rows = 3
-        val top = dp(56f)
+        val cols = Logic.GRID_COLS
+        val top = gridTop()
+        val bottom = height - dp(22f)
         val tw = (w - pad * 2 - gap * (cols - 1)) / cols
-        val th = (height - top - dp(22f) - gap * (rows - 1)) / rows
+        val th = gridRowPitch() - gap
         val name = text(23f, PRIMARY, bold = true)
         val meta = monoText(17f, SECONDARY)
+        gridScroll = gridScroll.coerceIn(0f, Logic.gridMaxScroll(items.size, gridRowPitch()))
+        // Scrolled rows slide under the header strip, never over it.
+        c.save()
+        c.clipRect(0f, top - dp(6f), w, bottom + dp(6f))
         items.forEachIndexed { i, p ->
             val l = pad + (i % cols) * (tw + gap)
-            val t = top + (i / cols) * (th + gap)
+            val t = top + (i / cols) * (th + gap) - gridScroll
+            if (t + th < top - dp(6f) || t > bottom + dp(6f)) return@forEachIndexed
             val r = RectF(l, t, l + tw, t + th)
             tiles += r to p
             hud.brackets(c, r, 12f, hud.chromeDim)
@@ -384,7 +389,32 @@ class DashboardView(ctx: Context) : View(ctx) {
             val age = if (run != null) Logic.runTime(run, now).takeIf { st == Status.RUNNING } ?: Logic.ago(run.startedAt, now).removeSuffix(" ago") else Logic.ago(p.pushedAt, now).removeSuffix(" ago")
             line(c, "PWR ${Logic.powerText(shownPower(p))} · $age", x, t + th * 0.88f, tw2, meta)
         }
+        c.restore()
+
+        // Off-screen tiles, counted in whole rows: snapped scrolls always land on one.
+        val firstRow = Math.round(gridScroll / gridRowPitch())
+        val below = (items.size - (firstRow + Logic.GRID_ROWS) * cols).coerceAtLeast(0)
+        val hint = monoText(15f)
+        if (below > 0) {
+            val more = "▼ $below MORE"
+            c.drawText(more, (w - hint.measureText(more)) / 2, height - dp(6f), hint)
+        }
+        if (firstRow > 0) c.drawText("▲", (w - hint.measureText("▲")) / 2, top - dp(2f), hint)
     }
+
+    /** Grid scroll offset in pixels; the activity drives it, [grid] clamps it. */
+    var gridScroll = 0f
+
+    private fun gridTop() = dp(56f)
+
+    /** Height of one Grid row plus its gap: three of them fill the screen. */
+    fun gridRowPitch(): Float {
+        val gap = dp(14f)
+        val rows = Logic.GRID_ROWS
+        return (height - gridTop() - dp(22f) - gap * (rows - 1)) / rows + gap
+    }
+
+    fun gridMaxScroll(): Float = Logic.gridMaxScroll(Hub.state?.let { Logic.grid(it).size } ?: 0, gridRowPitch())
 
     // ---- alerts -----------------------------------------------------------------
 

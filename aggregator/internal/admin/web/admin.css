@@ -7,7 +7,7 @@
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
 a { color: var(--chrome); }
 header { display: flex; gap: 24px; align-items: baseline; padding: 16px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-header .brand { font-family: var(--mono); color: var(--chrome); letter-spacing: .12em; font-size: 18px; }
+header .brand { font-family: var(--mono); color: var(--chrome); letter-spacing: .12em; font-size: 18px; display: inline-flex; align-items: center; gap: 10px; align-self: center; }
 header nav { display: flex; gap: 16px; flex: 1; }
 header nav a { font-family: var(--mono); text-decoration: none; color: var(--muted); letter-spacing: .06em; }
 header nav a.on { color: var(--text); }

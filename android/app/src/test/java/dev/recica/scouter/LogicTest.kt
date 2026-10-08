@@ -98,13 +98,31 @@ class LogicTest {
     }
 
     @Test
-    fun gridPutsBrokenThenRunningFirstAndCaps() {
+    fun gridPutsBrokenThenRunningFirstAndKeepsAll() {
         val ps = (1..12).map { p("p$it", Status.SUCCESS) }.toMutableList()
         ps[5] = p("broken", Status.FAILURE)
         ps[3] = p("busy", Status.RUNNING)
         val g = Logic.grid(state(*ps.toTypedArray()))
-        assertEquals(Logic.GRID_TILES, g.size)
+        assertEquals(12, g.size) // more than fit on screen: the Grid scrolls
         assertEquals(listOf("broken", "busy", "p1", "p2", "p3"), g.take(5).map { it.name })
+    }
+
+    @Test
+    fun gridScrollsOnlyPastThreeRows() {
+        val pitch = 100f
+        assertEquals(0f, Logic.gridMaxScroll(0, pitch))
+        assertEquals(0f, Logic.gridMaxScroll(9, pitch))
+        assertEquals(100f, Logic.gridMaxScroll(10, pitch))
+        assertEquals(100f, Logic.gridMaxScroll(12, pitch))
+        assertEquals(200f, Logic.gridMaxScroll(15, pitch))
+    }
+
+    @Test
+    fun gridSnapsToWholeRowsWithinBounds() {
+        assertEquals(0f, Logic.gridSnap(40f, 100f, 200f))
+        assertEquals(100f, Logic.gridSnap(60f, 100f, 200f))
+        assertEquals(200f, Logic.gridSnap(260f, 100f, 200f)) // past the end
+        assertEquals(0f, Logic.gridSnap(-80f, 100f, 200f)) // above the top
     }
 
     @Test

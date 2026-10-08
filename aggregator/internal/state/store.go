@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// MaxProjects caps the document: the phone shows at most 9 tiles, and a few
-// spares let the owner pin something slightly older in Focus.
+// MaxProjects caps the document: the phone's Grid shows 9 tiles at a time
+// and scrolls through the rest, so this bounds how far it can scroll.
 const MaxProjects = 15
 
 // Inputs is what sources write. The published State is derived from it.

@@ -5,6 +5,7 @@ import android.app.admin.DeviceAdminReceiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.animation.ValueAnimator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -22,7 +23,7 @@ import kotlin.random.Random
  * Full-screen kiosk; configuration arrives through [ConfigReceiver], never
  * through this exported activity's intent.
  * Swipe left/right: Focus ⇄ Grid. Long-press the top strip: settings. Long-press elsewhere
- * in Focus: pin/unpin. Tap a tile: pin it. Tap an alert: dismiss.
+ * in Focus: pin/unpin. Tap a tile: pin it. Drag the Grid up/down: scroll. Tap an alert: dismiss.
  */
 class DashboardActivity : Activity() {
     private lateinit var prefs: Prefs
@@ -70,6 +71,26 @@ class DashboardActivity : Activity() {
         }
     }
 
+    /** The desk view is the top of the Grid: a scrolled Grid returns there when left alone. */
+    private val resetScroll = Runnable {
+        settle?.cancel()
+        view.gridScroll = 0f
+        view.invalidate()
+    }
+
+    private var settle: ValueAnimator? = null
+    private var gridFlung = false
+
+    /** Glide the Grid to the row nearest [target]: the only Grid motion, and only after a touch. */
+    private fun settleGrid(target: Float) {
+        settle?.cancel()
+        val to = Logic.gridSnap(target, view.gridRowPitch(), view.gridMaxScroll())
+        settle = ValueAnimator.ofFloat(view.gridScroll, to).setDuration(150).apply {
+            addUpdateListener { view.gridScroll = it.animatedValue as Float; view.invalidate() }
+            start()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
@@ -87,7 +108,16 @@ class DashboardActivity : Activity() {
             addView(sweep) // on top, transparent, ignores touches
         })
         val gestures = GestureDetector(this, Gestures())
-        view.setOnTouchListener { _, e -> gestures.onTouchEvent(e); true }
+        view.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) gridFlung = false
+            gestures.onTouchEvent(e)
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                if (view.mode == DashboardView.Mode.GRID && !gridFlung) settleGrid(view.gridScroll)
+                main.removeCallbacks(resetScroll)
+                main.postDelayed(resetScroll, 60_000)
+            }
+            true
+        }
         StreamService.start(this)
     }
 
@@ -120,6 +150,8 @@ class DashboardActivity : Activity() {
         Hub.unlisten(redraw)
         main.removeCallbacks(shift)
         main.removeCallbacks(seconds)
+        main.removeCallbacks(resetScroll)
+        resetScroll.run() // back on screen means back at the top
         super.onPause()
     }
 
@@ -188,7 +220,22 @@ class DashboardActivity : Activity() {
             save(Logic.togglePin(s.settings, current.fullName))
         }
 
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+            if (view.mode != DashboardView.Mode.GRID || abs(dy) <= abs(dx)) return false
+            settle?.cancel()
+            view.gridScroll = (view.gridScroll + dy).coerceIn(0f, view.gridMaxScroll())
+            view.invalidate()
+            return true
+        }
+
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+            if (view.mode == DashboardView.Mode.GRID && abs(vy) > abs(vx) && abs(vy) >= 500) {
+                // One fling, one screen of rows.
+                gridFlung = true
+                val screen = Logic.GRID_ROWS * view.gridRowPitch()
+                settleGrid(view.gridScroll + if (vy < 0) screen else -screen)
+                return true
+            }
             if (abs(vx) < abs(vy) || abs(vx) < 500) return false
             val modes = DashboardView.Mode.entries
             val step = if (vx < 0) 1 else -1
