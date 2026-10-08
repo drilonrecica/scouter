@@ -9,8 +9,8 @@ mark shows live state (the admin favicon).
 |---|---|
 | `mark.svg` | The mark on its own, 48 px and up |
 | `favicon.svg` | Small cut for 16–32 px: thicker lens, larger dot, no readout lines |
-| `logo.svg` | Mark and wordmark, transparent background |
-| `header.svg` | README header, on a black plate so it reads the same in light and dark themes |
+| `logo.svg` | Mark and wordmark, transparent background; the README header (reads on light and dark themes) |
+| `header.svg` | Mark, wordmark and tagline on a black plate, for a white page that should still show the black ground |
 | `social-preview.png` | GitHub social preview, 1280×640 (Settings → Social preview); source in `social-preview.svg` |
 | `icon-512.png` | The launcher icon at 512 px, for anywhere that wants a square image |
 
@@ -38,8 +38,9 @@ nothing depends on the font being installed.
 
 ## Rules
 
-- Black ground. The mark is drawn for dark backgrounds; on white, use
-  `header.svg` (it brings its own black plate).
+- Black ground. The mark is drawn for dark backgrounds. `logo.svg` still
+  reads on white (the lens brings its own dark glass); where the black
+  ground matters, use `header.svg` (it brings its own black plate).
 - Only the dot carries status colour. Never recolour the lens.
 - Inspired by the Scouter from Dragon Ball; not affiliated with or endorsed
   by Toei Animation or Shueisha. These are original drawings, not official

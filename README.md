@@ -1,12 +1,19 @@
-# Scouter
+<h1 align="center">
+  <img src="branding/logo.svg" alt="Scouter" height="96">
+</h1>
 
-<img src="branding/header.svg" alt="Scouter: reads your CI's power level" width="900">
+<p align="center"><em>"It's over 9000!"</em> (failed builds, hopefully not). Reads your CI's power level.</p>
 
-**[drilonrecica.github.io/scouter](https://drilonrecica.github.io/scouter/)**: what it is, how it looks, how to set it up.
+<p align="center">
+  <a href="https://github.com/drilonrecica/scouter/actions/workflows/aggregator.yml"><img src="https://github.com/drilonrecica/scouter/actions/workflows/aggregator.yml/badge.svg?branch=master" alt="Aggregator CI"></a>
+  <a href="https://github.com/drilonrecica/scouter/actions/workflows/android.yml"><img src="https://github.com/drilonrecica/scouter/actions/workflows/android.yml/badge.svg?branch=master" alt="Android CI"></a>
+  <a href="https://github.com/drilonrecica/scouter/tags"><img src="https://img.shields.io/github/v/tag/drilonrecica/scouter?label=version" alt="Latest version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/drilonrecica/scouter" alt="MIT license"></a>
+</p>
 
-> *"It's over 9000!"* (failed builds, hopefully not)
+<p align="center"><strong><a href="https://drilonrecica.github.io/scouter/">drilonrecica.github.io/scouter</a></strong>: what it is, how it looks, how to set it up.</p>
 
-Reads your CI's power level. A retired Samsung Galaxy S3 Neo sits on the desk
+A retired Samsung Galaxy S3 Neo sits on the desk
 and shows the CI status of your most active GitHub repos on its AMOLED
 screen, with the RGB notification LED as a build light.
 
