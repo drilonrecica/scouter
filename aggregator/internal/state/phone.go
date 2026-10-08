@@ -1,13 +1,55 @@
 package state
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
+
+// MaxAPK bounds uploads; the Scouter APK is well under 1 MB.
+const MaxAPK = 30 << 20
+
+// ErrNotAPK means the upload was not a ZIP file (an APK is one) or too large.
+var ErrNotAPK = errors.New("not an APK (expected a ZIP file under 30 MB)")
+
+// SaveAPK stores an uploaded APK atomically at path and describes it. Only the
+// shape is checked here; the phone's package installer verifies signature
+// and version.
+func SaveAPK(path string, src io.Reader) (*AppRelease, error) {
+	br := bufio.NewReader(io.LimitReader(src, MaxAPK+1))
+	if magic, err := br.Peek(4); err != nil || string(magic) != "PK\x03\x04" {
+		return nil, ErrNotAPK
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
+	if err != nil {
+		return nil, err
+	}
+	n, err := io.Copy(tmp, br)
+	if err == nil && n > MaxAPK {
+		err = ErrNotAPK
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+		return nil, err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		os.Remove(tmp.Name())
+		return nil, err
+	}
+	return DescribeAPK(path)
+}
 
 // Heartbeat is what the phone reports about itself every minute. It is kept
 // out of the state document so it does not bump the version each time.

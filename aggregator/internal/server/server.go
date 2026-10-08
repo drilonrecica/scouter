@@ -4,7 +4,9 @@ package server
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"sync/atomic"
@@ -71,6 +73,34 @@ func requireAnyToken(tokens []string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// AcceptReleases lets a release tool publish a new APK with releaseToken,
+// a token that can do nothing else. GET reports what the phone runs, so the
+// tool can confirm the update landed. Off when releaseToken is empty.
+func (s *Server) AcceptReleases(store *state.Store, apkPath, releaseToken string, log *slog.Logger) {
+	if releaseToken == "" {
+		return
+	}
+	s.mux.Handle("POST /v1/release", requireToken(releaseToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rel, err := state.SaveAPK(apkPath, http.MaxBytesReader(w, r.Body, state.MaxAPK+1))
+		if err != nil {
+			code := http.StatusInternalServerError
+			if errors.Is(err, state.ErrNotAPK) {
+				code = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), code)
+			return
+		}
+		store.SetApp(rel)
+		log.Info("apk uploaded", "by", "release token", "sha256", rel.SHA256, "bytes", rel.Size)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(rel)
+	})))
+	s.mux.Handle("GET /v1/release", requireToken(releaseToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"offered": store.Get().App, "phone": store.Heartbeat()})
+	})))
 }
 
 // ServeAPK lets the phone download the APK at path for over-the-air updates.

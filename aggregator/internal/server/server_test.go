@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -218,5 +219,42 @@ func TestAgentEvents(t *testing.T) {
 	}
 	if ag := store.Get().Agents; len(ag) != 2 || ag[0].State != state.AgentWaiting || ag[0].Project != "igris" {
 		t.Fatalf("agents = %+v", ag)
+	}
+}
+
+func TestRelease(t *testing.T) {
+	store := state.NewStore("")
+	api := New(store, "phone")
+	apk := t.TempDir() + "/app/scouter.apk"
+	api.AcceptReleases(store, apk, "release", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := httptest.NewServer(api)
+	defer srv.Close()
+	post := func(token, body string) int {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/release", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if c := post("phone", "PK\x03\x04x"); c != http.StatusUnauthorized {
+		t.Fatalf("phone token must not publish APKs: %d", c)
+	}
+	if c := post("release", "<html>"); c != http.StatusBadRequest || store.Get().App != nil {
+		t.Fatalf("non-APK: %d", c)
+	}
+	if c := post("release", "PK\x03\x04apk"); c != http.StatusOK || store.Get().App == nil || store.Get().App.Size != 7 {
+		t.Fatalf("release: %d %+v", c, store.Get().App)
+	}
+	store.SetHeartbeat(state.Heartbeat{AppVersion: "0.3.4"})
+	resp := get(t, srv, "/v1/release", "release", nil)
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), `"app_version":"0.3.4"`) {
+		t.Fatalf("status = %s", b)
+	}
+	if resp := get(t, srv, "/v1/release", "phone", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("phone token reading release status: %d", resp.StatusCode)
 	}
 }

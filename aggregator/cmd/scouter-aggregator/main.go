@@ -80,6 +80,7 @@ func run(log *slog.Logger) error {
 	api := server.New(store, phoneToken)
 	api.ServeAPK(apkPath)
 	api.AcceptAgentEvents(store, os.Getenv("SCOUTER_HOOK_TOKEN"))
+	api.AcceptReleases(store, apkPath, os.Getenv("SCOUTER_RELEASE_TOKEN"), log)
 	adminPassword := os.Getenv("SCOUTER_ADMIN_PASSWORD")
 	isSet := func(k string) bool { return os.Getenv(k) != "" }
 	ui := admin.New(admin.Config{
@@ -97,6 +98,7 @@ func run(log *slog.Logger) error {
 			{Name: "SCOUTER_COOLIFY_URL", Purpose: "Coolify base URL, for deploy status", Set: isSet("SCOUTER_COOLIFY_URL")},
 			{Name: "SCOUTER_COOLIFY_TOKEN", Purpose: "Coolify API, read-only", Set: isSet("SCOUTER_COOLIFY_TOKEN")},
 			{Name: "SCOUTER_HOOK_TOKEN", Purpose: "Claude Code hooks (optional; the phone token also works)", Set: isSet("SCOUTER_HOOK_TOKEN")},
+			{Name: "SCOUTER_RELEASE_TOKEN", Purpose: "publishing APKs from the release script", Set: isSet("SCOUTER_RELEASE_TOKEN")},
 			{Name: "SCOUTER_IGNORE_REPOS", Purpose: "repos hidden by env (in addition to settings)", Set: isSet("SCOUTER_IGNORE_REPOS")},
 		},
 	})

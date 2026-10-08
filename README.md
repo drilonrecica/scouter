@@ -91,6 +91,7 @@ of `/admin*`.
 | `SCOUTER_ADMIN_PASSWORD` | optional: enables the admin UI (min 12 chars) |
 | `SCOUTER_COOLIFY_URL` / `SCOUTER_COOLIFY_TOKEN` | optional: deploy status (read-only API token, without *read:sensitive*) |
 | `SCOUTER_HOOK_TOKEN` | optional: a token only for Claude Code hooks (the phone token also works) |
+| `SCOUTER_RELEASE_TOKEN` | optional: lets `tools/release.sh` publish APKs over the air (`POST /v1/release`) |
 | `SCOUTER_IGNORE_REPOS` | optional: `owner/repo` list hidden on top of the settings |
 | `SCOUTER_ADDR` | default `:8080` |
 | `SCOUTER_DATA_DIR` | default `/data`; holds `state.json` so restarts don't start empty |
@@ -165,6 +166,11 @@ With Scouter as device owner, upload a newer APK (same signing key, higher
 `versionCode`) on the admin **App** page. The phone downloads it, checks its
 sha256, installs it silently and restarts itself; each upload is tried once,
 the result shows on the admin status page.
+
+Or from the build machine in one go: `tools/release.sh` bumps the version,
+builds, publishes with `SCOUTER_RELEASE_TOKEN` (a token that can only publish
+APKs; locally in `~/.config/scouter/release-token`) and waits until the phone
+reports the new version.
 
 ### Claude Code agents
 
