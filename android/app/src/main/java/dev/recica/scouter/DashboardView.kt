@@ -175,7 +175,9 @@ class DashboardView(ctx: Context) : View(ctx) {
         c.drawText(pwrText, pwrX, top, pwr)
         val pwrLabel = monoText(16f)
         c.drawText("PWR", pwrX - dp(10f) - pwrLabel.measureText("PWR"), top, pwrLabel)
-        line(c, p.name, nameX, top, pwrX - nameX - dp(70f), text(30f, PRIMARY, bold = true))
+        val nameText = text(30f, PRIMARY, bold = true)
+        val nameIcon = icon(c, p, nameX, top, 30f, nameText)
+        line(c, p.name, nameX + nameIcon, top, pwrX - nameX - dp(70f) - nameIcon, nameText)
         s.history[p.fullName]?.let { series ->
             sparkline(c, series, RectF(w - pad - dp(150f), top + dp(10f), w - pad, top + dp(30f)), color(st))
         }
@@ -382,7 +384,8 @@ class DashboardView(ctx: Context) : View(ctx) {
                 val gp = monoText(16f, if (p.mismatch) RED else color(d.status))
                 c.drawText(glyph, l + tw - dp(14f) - gp.measureText(glyph), t + th * 0.30f, gp)
             }
-            line(c, p.name, x, t + th * 0.36f, tw2 - dp(26f), name)
+            val nameIcon = icon(c, p, x, t + th * 0.36f, 22f, name)
+            line(c, p.name, x + nameIcon, t + th * 0.36f, tw2 - dp(26f) - nameIcon, name)
             line(c, Logic.label(st), x, t + th * 0.64f, tw2, text(19f, color(st), bold = true))
             val run = p.ci
             // Compact age ("14m"): the mono font is wide and tiles are narrow.
@@ -400,6 +403,24 @@ class DashboardView(ctx: Context) : View(ctx) {
             c.drawText(more, (w - hint.measureText(more)) / 2, height - dp(6f), hint)
         }
         if (firstRow > 0) c.drawText("▲", (w - hint.measureText("▲")) / 2, top - dp(2f), hint)
+    }
+
+    // Logos in full colour but dimmed: on black, alpha is brightness, and the
+    // status colours stay the brightest thing on the screen.
+    private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { alpha = 180 }
+    private val iconDst = RectF()
+
+    /**
+     * Draws [p]'s icon at [x], centred on the text line at [baseline]; returns
+     * the width it took, 0 when the project has no icon (yet).
+     */
+    private fun icon(c: Canvas, p: Project, x: Float, baseline: Float, sizeDp: Float, beside: Paint): Float {
+        val bmp = Icons.get(p.icon) ?: return 0f
+        val size = dp(sizeDp)
+        val mid = baseline + (beside.ascent() + beside.descent()) / 2
+        iconDst.set(x, mid - size / 2, x + size, mid + size / 2)
+        c.drawBitmap(bmp, null, iconDst, iconPaint)
+        return size + dp(8f)
     }
 
     /** Grid scroll offset in pixels; the activity drives it, [grid] clamps it. */

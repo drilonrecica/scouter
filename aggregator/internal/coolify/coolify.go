@@ -33,6 +33,7 @@ type app struct {
 	GitRepository string `json:"git_repository"`
 	GitBranch     string `json:"git_branch"`
 	Status        string `json:"status"`
+	FQDN          string `json:"fqdn"` // comma-separated URLs the app is served at
 }
 
 type deployment struct {
@@ -181,6 +182,15 @@ func (p *Poller) listApps(ctx context.Context) error {
 	return nil
 }
 
+// siteURL is the first URL an app is served at, if any.
+func siteURL(fqdn string) string {
+	first, _, _ := strings.Cut(fqdn, ",")
+	if first = strings.TrimSpace(first); strings.HasPrefix(first, "http://") || strings.HasPrefix(first, "https://") {
+		return first
+	}
+	return ""
+}
+
 // Status maps Coolify's deployment queue states to Scouter's.
 func Status(s string) state.DeployStatus {
 	switch {
@@ -217,7 +227,7 @@ func (p *Poller) pollDeployment(ctx context.Context, name string, t *tracked) er
 	interval := quietEvery
 	if len(list) > 0 {
 		d := list[0]
-		t.deploy = state.Deploy{Status: Status(d.Status), Commit: d.Commit, Branch: t.app.GitBranch, At: d.UpdatedAt.UTC(), Health: t.app.Status, Apps: t.count}
+		t.deploy = state.Deploy{Status: Status(d.Status), Commit: d.Commit, Branch: t.app.GitBranch, At: d.UpdatedAt.UTC(), Health: t.app.Status, Apps: t.count, URL: siteURL(t.app.FQDN)}
 		t.hasData = true
 		if t.deploy.Status == state.DeployRunning || t.deploy.Status == state.DeployQueued {
 			interval = busyEvery

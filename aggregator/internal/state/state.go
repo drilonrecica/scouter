@@ -47,6 +47,10 @@ type Project struct {
 	// Mismatch: the deployed commit is one whose CI failed (Coolify deploys
 	// on push without waiting for CI).
 	Mismatch bool `json:"mismatch,omitempty"`
+	// Homepage is the repo's website as set on GitHub; a fallback for the icon.
+	Homepage string `json:"homepage,omitempty"`
+	// Icon is the hash of the project's icon, served at /v1/icons/{hash}.
+	Icon string `json:"icon,omitempty"`
 }
 
 // DeployStatus mirrors Coolify's deployment queue states.
@@ -70,6 +74,8 @@ type Deploy struct {
 	Health string `json:"health"`
 	// Apps counts the Coolify apps built from this repo (staging, production, ...).
 	Apps int `json:"apps"`
+	// URL is where the deployed app is served, when Coolify knows it.
+	URL string `json:"url,omitempty"`
 }
 
 // LastActivity is what Grid sorts by and what auto-Focus follows.

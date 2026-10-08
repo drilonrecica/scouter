@@ -17,6 +17,7 @@ import (
 	"github.com/drilonrecica/scouter/aggregator/internal/admin"
 	"github.com/drilonrecica/scouter/aggregator/internal/coolify"
 	"github.com/drilonrecica/scouter/aggregator/internal/github"
+	"github.com/drilonrecica/scouter/aggregator/internal/icons"
 	"github.com/drilonrecica/scouter/aggregator/internal/server"
 	"github.com/drilonrecica/scouter/aggregator/internal/state"
 )
@@ -69,6 +70,8 @@ func run(log *slog.Logger) error {
 	gh := github.NewClient(env("SCOUTER_GITHUB_API", "https://api.github.com"), ghToken, &http.Client{Timeout: 20 * time.Second})
 	poller := github.NewPoller(gh, store, ignore, log)
 	go poller.Run(ctx)
+	iconDir := filepath.Join(dataDir, "icons")
+	go icons.NewPoller(gh, &http.Client{Timeout: 15 * time.Second}, store, iconDir, log).Run(ctx)
 
 	coolifyURL, coolifyToken := os.Getenv("SCOUTER_COOLIFY_URL"), os.Getenv("SCOUTER_COOLIFY_TOKEN")
 	if coolifyURL != "" && coolifyToken != "" {
@@ -79,6 +82,7 @@ func run(log *slog.Logger) error {
 
 	api := server.New(store, phoneToken)
 	api.ServeAPK(apkPath)
+	api.ServeIcons(iconDir)
 	api.AcceptAgentEvents(store, os.Getenv("SCOUTER_HOOK_TOKEN"))
 	api.AcceptReleases(store, apkPath, os.Getenv("SCOUTER_RELEASE_TOKEN"), log)
 	adminPassword := os.Getenv("SCOUTER_ADMIN_PASSWORD")

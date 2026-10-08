@@ -26,6 +26,7 @@ type Inputs struct {
 	Deploys   map[string]Deploy // by project FullName, from Coolify
 	App       *AppRelease       // APK offered for over-the-air update
 	Agents    map[string]Agent  // Claude Code sessions, by session ID
+	Icons     map[string]string // icon hash by project FullName; "" = looked, found none
 }
 
 // Store owns the inputs, derives the published State and fans changes out to subscribers.
@@ -51,7 +52,7 @@ type Store struct {
 // NewStore restores the last snapshot from snapshotPath if there is one.
 func NewStore(snapshotPath string) *Store {
 	s := &Store{
-		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}, Settings: DefaultSettings(), Deploys: map[string]Deploy{}},
+		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}, Settings: DefaultSettings(), Deploys: map[string]Deploy{}, Icons: map[string]string{}},
 		subs:     map[chan State]struct{}{},
 		snapshot: snapshotPath,
 		// UTC: older Android (java.time on API < 33) cannot parse offsets like +02:00.
@@ -188,6 +189,10 @@ func derive(in Inputs, now time.Time) State {
 		if d, ok := in.Deploys[p.FullName]; ok {
 			p.Deploy = &d
 			p.Mismatch = deployedRed(p)
+		}
+		// Unknown until the icon source has looked: keep what the snapshot had.
+		if h, ok := in.Icons[p.FullName]; ok {
+			p.Icon = h
 		}
 		all = append(all, p)
 	}

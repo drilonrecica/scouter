@@ -33,6 +33,7 @@ type repo struct {
 	DefaultBranch string    `json:"default_branch"`
 	PushedAt      time.Time `json:"pushed_at"`
 	Archived      bool      `json:"archived"`
+	Homepage      string    `json:"homepage"`
 }
 
 type tracked struct {
@@ -175,6 +176,7 @@ func (p *Poller) listRepos(ctx context.Context) error {
 		}
 		t.project.Name, t.project.FullName = r.Name, r.FullName
 		t.project.DefaultBranch, t.project.PushedAt = r.DefaultBranch, r.PushedAt
+		t.project.Homepage = r.Homepage
 	}
 	for name := range p.repos {
 		if !keep[name] {

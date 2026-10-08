@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -109,6 +112,28 @@ func (s *Server) ServeAPK(path string) {
 		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
 		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, path)
+	})))
+}
+
+var iconHash = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// ServeIcons serves the project icons in dir (see package icons). A hash
+// names its content, so a phone may cache each one forever.
+func (s *Server) ServeIcons(dir string) {
+	s.mux.Handle("GET /v1/icons/{hash}", requireToken(s.phoneToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hash := r.PathValue("hash")
+		if !iconHash.MatchString(hash) {
+			http.NotFound(w, r)
+			return
+		}
+		b, err := os.ReadFile(filepath.Join(dir, hash+".png"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Write(b)
 	})))
 }
 

@@ -45,6 +45,7 @@ class DashboardActivity : Activity() {
         }
         val s = Hub.state
         if (s != null && s.version != shown?.version) {
+            Icons.sync(this, s)
             view.onStateChanged(shown, s)
             shown = s
         } else {

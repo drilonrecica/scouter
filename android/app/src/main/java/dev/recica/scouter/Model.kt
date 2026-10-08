@@ -112,6 +112,8 @@ data class Project(
     val deploy: Deploy? = null,
     /** The deployed commit is one whose CI failed. */
     val mismatch: Boolean = false,
+    /** Hash of the project's icon on the aggregator (see [Icons]); null = none. */
+    val icon: String? = null,
 )
 
 data class Deploy(
@@ -175,6 +177,8 @@ object Parser {
         )
     }
 
+    private val ICON_HASH = Regex("[0-9a-f]{16}")
+
     private fun project(o: JSONObject) = Project(
         name = o.getString("name"),
         fullName = o.getString("full_name"),
@@ -184,6 +188,7 @@ object Parser {
         latest = o.optJSONObject("latest")?.let(::run),
         power = if (o.has("power")) o.getInt("power") else null,
         openPRs = o.optInt("open_prs"),
+        icon = o.optString("icon").takeIf { ICON_HASH.matches(it) },
         deploy = o.optJSONObject("deploy")?.let { d ->
             Deploy(
                 status = when (d.optString("status")) {

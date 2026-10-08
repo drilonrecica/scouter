@@ -26,8 +26,9 @@ class LogicTest {
             """{"version":7,"focus":"me/a","projects":[{"name":"a","full_name":"me/a","default_branch":"master",
                "pushed_at":"2026-10-07T11:00:00Z","ci":{"status":"failure","branch":"master","sha":"x","title":"fix it",
                "workflow":"Lint","started_at":"2026-10-07T11:01:00Z","duration_s":75,"url":"u"},"power":6750,"open_prs":2,
-               "deploy":{"status":"success","commit":"x1234567","branch":"master","at":"2026-10-07T11:05:00Z","health":"running:healthy","apps":2},"mismatch":true},
-               {"name":"b","full_name":"me/b","default_branch":"main","open_prs":0}],
+               "deploy":{"status":"success","commit":"x1234567","branch":"master","at":"2026-10-07T11:05:00Z","health":"running:healthy","apps":2},"mismatch":true,"icon":"0123456789abcdef"},
+               {"name":"b","full_name":"me/b","default_branch":"main","open_prs":0},
+               {"name":"c","full_name":"me/c","default_branch":"main","open_prs":0,"icon":"../../etc/passwd"}],
                "alerts":[{"id":"ci:me/a:x","kind":"ci_failed","project":"me/a","text":"t","at":"2026-10-07T13:03:00.123456789+02:00"}],
                "sources":{"github":{"ok":false,"error":"boom","updated_at":"2026-10-07T11:00:00Z"}}}""",
         )
@@ -38,6 +39,9 @@ class LogicTest {
         assertEquals(2, a.deploy!!.apps)
         assertTrue(a.mismatch)
         assertNull(s.projects[1].deploy)
+        assertEquals("0123456789abcdef", a.icon)
+        assertNull(s.projects[1].icon) // none found
+        assertNull(s.projects[2].icon) // never trust anything but a hash in a file name
         assertEquals("healthy", Logic.health(a.deploy!!.health))
         assertEquals("", Logic.health("unknown"))
         assertEquals("⚠ DEPLOYED WHILE CI RED", Logic.alertHeadline("deployed_red"))

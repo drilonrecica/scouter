@@ -30,6 +30,7 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 | **Deploys** | With Coolify connected: each repo's latest deployment (LIVE / DEPLOYING / DEPLOY FAILED) beside its CI, a grid glyph, and `⚠ DEPLOYED WHILE CI RED` when Coolify shipped a commit whose CI failed (it deploys on push without waiting). |
 | **Agents** | Third screen: your Claude Code sessions as WAITING / WORKING / DONE. A waiting session turns the LED blue and shows `◆ WAITING` in Focus. |
 | **History** | 14-day power sparkline under PWR. |
+| **Icons** | Each project's own icon beside its name in Focus and Grid, dimmed so status stays the brightest thing on screen. The aggregator looks for an icon file in the repo (`logo.png`, `apple-touch-icon.png`, a favicon, Android's `ic_launcher.png`…), else the favicon of the deployed site (Coolify URL or the repo's homepage); SVG-only icons are skipped. |
 | **Briefing** | When the screen turns on in the morning: what broke, recovered and deployed overnight (30 s, tap to close). |
 | **Wave** | At night, wave over the top of the phone to see the dashboard for 20 s. |
 | **Alert** | A *new* failure on a default branch (less than 12 h old) cracks the lens: `POWER LEVEL DROPPING`, `PWR 9000 → 6750`. Takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen when it is off. |
