@@ -52,6 +52,8 @@ type Status struct {
 	Clients  int64
 	Rate     int64
 	LastPoll time.Time
+	Build    string   // commit the aggregator was built from
+	Storage  []string // unreadable or unsaveable files under /data
 }
 
 // Secret describes an environment variable without revealing its value.
@@ -242,11 +244,16 @@ func isLocal(host string) bool {
 
 // ---- login -----------------------------------------------------------------------
 
-// clientIP is the first X-Forwarded-For hop (set by Coolify's proxy), else the peer.
-// It is spoofable, which is why a global limit backs it up.
+// clientIP is the last X-Forwarded-For hop, the one Coolify's proxy appended
+// for the peer it saw, else the peer itself. Earlier hops come from the
+// client and could be anything: trusting the first let a client pick a new
+// "IP" per login attempt. A global limit backs this up.
 func clientIP(r *http.Request) string {
-	if f := r.Header.Get("X-Forwarded-For"); f != "" {
-		return strings.TrimSpace(strings.Split(f, ",")[0])
+	if f := r.Header.Values("X-Forwarded-For"); len(f) > 0 {
+		hops := strings.Split(f[len(f)-1], ",")
+		if ip := strings.TrimSpace(hops[len(hops)-1]); ip != "" {
+			return ip
+		}
 	}
 	h, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return h
@@ -371,6 +378,7 @@ func (u *ui) statusPage(w http.ResponseWriter, _ *http.Request, _ string, s *ses
 	data := map[string]any{
 		"Version": st.Version, "Bytes": len(b), "Clients": status.Clients, "Rate": status.Rate, "LastPoll": last,
 		"Projects": len(st.Projects), "Alerts": len(st.Alerts), "Sources": sources, "Secrets": u.cfg.Secrets,
+		"Build": status.Build, "Storage": status.Storage,
 	}
 	if h := u.cfg.Store.Heartbeat(); h != nil {
 		ago := u.now().Sub(h.At)

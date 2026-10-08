@@ -22,23 +22,51 @@ import (
 // Traefik) and lets the phone notice a dead connection quickly.
 var Heartbeat = 25 * time.Second
 
+// streamWriteTimeout bounds each write to a stream. A phone that vanished
+// without closing the connection would otherwise hold its handler forever.
+const streamWriteTimeout = 30 * time.Second
+
 // Server is the phone-facing API. Mount extra handlers (the admin UI) with Handle.
 type Server struct {
 	mux        *http.ServeMux
 	clients    atomic.Int64
 	phoneToken string
+	health     func() []string // problems; none = healthy
+	build      string
 }
 
 // New returns the server. phoneToken guards everything but /healthz.
 func New(store *state.Store, phoneToken string) *Server {
-	s := &Server{mux: http.NewServeMux()}
-	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok\n")) })
+	s := &Server{mux: http.NewServeMux(), health: func() []string { return nil }, build: "dev"}
+	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.Handle("GET /v1/state", requireToken(phoneToken, getState(store)))
 	s.mux.Handle("GET /v1/stream", requireToken(phoneToken, s.stream(store)))
 	s.mux.Handle("PUT /v1/settings", requireToken(phoneToken, putSettings(store)))
 	s.mux.Handle("POST /v1/heartbeat", requireToken(phoneToken, postHeartbeat(store)))
 	s.phoneToken = phoneToken
 	return s
+}
+
+// CheckHealth makes /healthz answer 503 while check reports problems, and
+// names the build it runs. For an uptime monitor outside: Coolify cannot
+// probe the distroless image from inside.
+func (s *Server) CheckHealth(build string, check func() []string) {
+	s.build, s.health = build, check
+}
+
+func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	problems := s.health()
+	if len(problems) > 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, "unhealthy %s\n", s.build)
+		for _, p := range problems {
+			fmt.Fprintf(w, "- %s\n", p)
+		}
+		return
+	}
+	fmt.Fprintf(w, "ok %s\n", s.build)
 }
 
 // AcceptAgentEvents takes Claude Code hook events. hookToken (optional) is a
@@ -222,11 +250,14 @@ func (s *Server) stream(store *state.Store) http.Handler {
 		updates, cancel := store.Subscribe()
 		defer cancel()
 
+		// Not supported by every ResponseWriter (tests); then writes just block.
+		deadline := func() { _ = rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)) }
 		send := func(st state.State) error {
 			b, err := json.Marshal(st)
 			if err != nil {
 				return err
 			}
+			deadline()
 			if _, err := fmt.Fprintf(w, "id: %d\nevent: state\ndata: %s\n\n", st.Version, b); err != nil {
 				return err
 			}
@@ -246,6 +277,7 @@ func (s *Server) stream(store *state.Store) http.Handler {
 					return
 				}
 			case <-hb.C:
+				deadline()
 				if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil || rc.Flush() != nil {
 					return
 				}

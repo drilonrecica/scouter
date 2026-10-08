@@ -142,11 +142,57 @@ func TestOlderSettingsFileGetsTheStageAndWeather(t *testing.T) {
 	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	bg := loadSettings(path).Background
+	set, problem := loadSettings(path, t0)
+	if problem != "" {
+		t.Fatal(problem)
+	}
+	bg := set.Background
 	if bg.Aura || !bg.Stars || !bg.Mesh {
 		t.Errorf("saved choices lost: %+v", bg)
 	}
 	if !bg.Stage || !bg.Weather {
 		t.Errorf("new layers should default on: %+v", bg)
+	}
+}
+
+func TestCorruptSettingsAreKeptAside(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	broken := `{"favorites":["me/app"], "hidden": [`
+	if err := os.WriteFile(path, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore("")
+	s.UseSettingsFile(path)
+	if fav := s.Settings().Favorites; len(fav) != 0 {
+		t.Fatalf("favorites = %v, want defaults", fav)
+	}
+	load, _ := s.StorageProblems()
+	if len(load) != 1 || !strings.Contains(load[0], "settings.json") {
+		t.Fatalf("load problems = %v, want the corrupt file reported", load)
+	}
+
+	// Saving new settings must not destroy the only copy of the old ones.
+	if err := s.SetSettings(DefaultSettings()); err != nil {
+		t.Fatal(err)
+	}
+	bad, _ := filepath.Glob(path + ".bad-*")
+	if len(bad) != 1 {
+		t.Fatalf("kept copies = %v, want one", bad)
+	}
+	if b, _ := os.ReadFile(bad[0]); string(b) != broken {
+		t.Fatalf("kept copy = %q, want the original bytes", b)
+	}
+}
+
+func TestSaveErrorsAreReported(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore("")
+	s.UseSettingsFile(filepath.Join(dir, "missing-dir", "settings.json"))
+	if err := s.SetSettings(DefaultSettings()); err == nil {
+		t.Fatal("want an error saving into a missing directory")
+	}
+	if _, save := s.StorageProblems(); len(save) != 1 {
+		t.Fatalf("save problems = %v, want one", save)
 	}
 }

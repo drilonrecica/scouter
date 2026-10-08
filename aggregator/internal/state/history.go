@@ -1,8 +1,6 @@
 package state
 
 import (
-	"encoding/json"
-	"os"
 	"time"
 )
 
@@ -19,8 +17,9 @@ func (s *Store) UseHistoryFile(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.historyFile = path
-	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, &s.history)
+	if _, problem := loadJSON(path, &s.history, s.now()); problem != "" {
+		s.loadProblems = append(s.loadProblems, problem)
+		s.history = nil
 	}
 	if s.history == nil {
 		s.history = history{}

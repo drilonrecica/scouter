@@ -255,3 +255,16 @@ func TestAPKUpload(t *testing.T) {
 		t.Fatalf("stored = %q", b)
 	}
 }
+
+func TestClientIPIgnoresHopsTheClientSent(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/admin/login", nil)
+	r.RemoteAddr = "10.0.0.2:5000" // the proxy
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 203.0.113.7")
+	if ip := clientIP(r); ip != "203.0.113.7" {
+		t.Fatalf("ip = %q, want the hop the proxy appended", ip)
+	}
+	r.Header.Del("X-Forwarded-For")
+	if ip := clientIP(r); ip != "10.0.0.2" {
+		t.Fatalf("ip = %q, want the peer without a proxy", ip)
+	}
+}

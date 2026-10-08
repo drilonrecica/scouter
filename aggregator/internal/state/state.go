@@ -106,8 +106,13 @@ type Source struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Schema is the document format. It goes up only for changes an older phone
+// app would misread; new optional fields do not need it.
+const Schema = 1
+
 // State is the whole document. Version increases on every change and doubles as ETag.
 type State struct {
+	Schema   int               `json:"schema"`
 	Version  int64             `json:"version"`
 	Focus    string            `json:"focus"`
 	Projects []Project         `json:"projects"`

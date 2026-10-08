@@ -258,3 +258,24 @@ func TestRelease(t *testing.T) {
 		t.Fatalf("phone token reading release status: %d", resp.StatusCode)
 	}
 }
+
+func TestHealthzReportsProblems(t *testing.T) {
+	store := state.NewStore("")
+	s := New(store, "tok")
+	var problems []string
+	s.CheckHealth("abc123", func() []string { return problems })
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+
+	resp := get(t, srv, "/healthz", "", nil)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "abc123") {
+		t.Fatalf("healthy: %d %q, want 200 naming the build", resp.StatusCode, body)
+	}
+	problems = []string{"saving /data/state.json: disk full"}
+	resp = get(t, srv, "/healthz", "", nil)
+	body, _ = io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(string(body), "disk full") {
+		t.Fatalf("unhealthy: %d %q, want 503 with the problem", resp.StatusCode, body)
+	}
+}

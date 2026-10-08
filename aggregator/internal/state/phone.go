@@ -65,7 +65,8 @@ type Heartbeat struct {
 	DeviceOwner bool      `json:"device_owner"`
 	LockTask    bool      `json:"lock_task"`
 	LastOTA     string    `json:"last_ota"`
-	At          time.Time `json:"at"` // set by the server on receipt
+	LastCrash   string    `json:"last_crash,omitempty"` // the app's most recent uncaught exception
+	At          time.Time `json:"at"`                   // set by the server on receipt
 }
 
 // AppRelease describes the APK offered to the phone for over-the-air update.
@@ -95,7 +96,7 @@ func (s *Store) SetHeartbeat(h Heartbeat) {
 	h.At = s.now()
 	s.heartbeat = &h
 	if s.heartbeatFile != "" {
-		_ = writeAtomic(s.heartbeatFile, h)
+		_ = s.saveLocked(s.heartbeatFile, h) // failures show in StorageProblems
 	}
 }
 

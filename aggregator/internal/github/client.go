@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Client is a minimal GitHub REST client. It remembers each URL's ETag and
@@ -33,6 +35,55 @@ func (c *Client) RateRemaining() int64 { return c.rateRemaining.Load() }
 type cached struct {
 	etag string
 	body []byte
+}
+
+// maxCached keeps huge answers (a big repo's recursive tree) out of the
+// cache: they are fetched in full again instead of held in memory.
+const maxCached = 1 << 20
+
+// Forget drops cached answers about a repo that is no longer tracked.
+func (c *Client) Forget(fullName string) {
+	prefix := c.base + "/repos/" + fullName + "/"
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for u := range c.cache {
+		if strings.HasPrefix(u, prefix) {
+			delete(c.cache, u)
+		}
+	}
+}
+
+// RateLimitError is a 403/429 that GitHub sent because the budget is spent.
+// Until is when it may be asked again.
+type RateLimitError struct {
+	Until time.Time
+}
+
+func (e *RateLimitError) Error() string {
+	return "rate limited until " + e.Until.Format("15:04:05 UTC")
+}
+
+// rateLimited recognises a rate limit answer: a Retry-After (secondary
+// limits) or an exhausted X-RateLimit-Remaining (the hourly budget). Other
+// 403s, such as a token without access to a repo, are plain errors.
+func rateLimited(resp *http.Response, now time.Time) *RateLimitError {
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return nil
+	}
+	if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+		return &RateLimitError{Until: now.Add(time.Duration(s) * time.Second)}
+	}
+	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		until := now.Add(time.Minute)
+		if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			until = time.Unix(reset, 0).UTC()
+		}
+		return &RateLimitError{Until: until}
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return &RateLimitError{Until: now.Add(time.Minute)}
+	}
+	return nil
 }
 
 func NewClient(base, token string, hc *http.Client) *Client {
@@ -75,12 +126,15 @@ func (c *Client) get(ctx context.Context, path string, v any) error {
 		if err != nil {
 			return err
 		}
-		if etag := resp.Header.Get("ETag"); etag != "" {
+		if etag := resp.Header.Get("ETag"); etag != "" && len(body) <= maxCached {
 			c.mu.Lock()
 			c.cache[url] = cached{etag: etag, body: body}
 			c.mu.Unlock()
 		}
 	default:
+		if rl := rateLimited(resp, time.Now().UTC()); rl != nil {
+			return rl
+		}
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("GET %s: %s: %s", path, resp.Status, msg)
 	}

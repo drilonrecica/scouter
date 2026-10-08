@@ -5,8 +5,6 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -47,6 +45,9 @@ type Store struct {
 	historyFile string
 
 	events []Event // newest last, at most maxEvents
+
+	loadProblems []string          // files found unreadable at startup
+	saveErrs     map[string]string // path -> last save error, while failing
 }
 
 // NewStore restores the last snapshot from snapshotPath if there is one.
@@ -54,20 +55,27 @@ func NewStore(snapshotPath string) *Store {
 	s := &Store{
 		in:       Inputs{Projects: map[string]Project{}, Sources: map[string]Source{}, Settings: DefaultSettings(), Deploys: map[string]Deploy{}, Icons: map[string]string{}},
 		subs:     map[chan State]struct{}{},
+		saveErrs: map[string]string{},
 		snapshot: snapshotPath,
 		// UTC: older Android (java.time on API < 33) cannot parse offsets like +02:00.
 		now: func() time.Time { return time.Now().UTC() },
 	}
+	// Without a snapshot, count on from the boot time rather than from 0, so
+	// a version (and ETag) the phone saw before a lost snapshot cannot come
+	// back for a different document.
+	s.pub.Version = s.now().Unix()
 	if snapshotPath != "" {
-		if b, err := os.ReadFile(snapshotPath); err == nil {
-			var st State
-			if json.Unmarshal(b, &st) == nil {
-				for _, p := range st.Projects {
-					s.in.Projects[p.FullName] = p
-				}
-				s.events = st.Events
-				s.pub.Version = st.Version
+		var st State
+		found, problem := loadJSON(snapshotPath, &st, s.now())
+		if problem != "" {
+			s.loadProblems = append(s.loadProblems, problem)
+		}
+		if found {
+			for _, p := range st.Projects {
+				s.in.Projects[p.FullName] = p
 			}
+			s.events = st.Events
+			s.pub.Version = max(st.Version, s.pub.Version)
 		}
 	}
 	s.publishLocked()
@@ -79,7 +87,11 @@ func (s *Store) UseSettingsFile(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings = path
-	s.in.Settings = loadSettings(path)
+	set, problem := loadSettings(path, s.now())
+	if problem != "" {
+		s.loadProblems = append(s.loadProblems, problem)
+	}
+	s.in.Settings = set
 	s.publishLocked()
 }
 
@@ -98,7 +110,7 @@ func (s *Store) SetSettings(next Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.settings != "" {
-		if err := writeAtomic(s.settings, next); err != nil {
+		if err := s.saveLocked(s.settings, next); err != nil {
 			return err
 		}
 	}
@@ -147,7 +159,7 @@ func (s *Store) Subscribe() (<-chan State, func()) {
 func (s *Store) publishLocked() {
 	now := s.now()
 	if s.history != nil && s.history.record(s.in.Projects, now) && s.historyFile != "" {
-		_ = writeAtomic(s.historyFile, s.history)
+		_ = s.saveLocked(s.historyFile, s.history) // failures show in StorageProblems
 	}
 	next := derive(s.in, now) // Version is zero here, so b compares content only
 	if s.history != nil {
@@ -170,6 +182,7 @@ func (s *Store) publishLocked() {
 	next.Events = recentEvents(s.events, now)
 	s.pubJSON = b
 	next.Version = s.pub.Version + 1
+	next.Schema = Schema
 	s.pub = next
 	for ch := range s.subs {
 		select {
@@ -179,7 +192,7 @@ func (s *Store) publishLocked() {
 		ch <- next
 	}
 	if s.snapshot != "" {
-		_ = writeAtomic(s.snapshot, next)
+		_ = s.saveLocked(s.snapshot, next) // failures show in StorageProblems
 	}
 }
 
@@ -278,25 +291,4 @@ func short(sha string) string {
 		return sha[:7]
 	}
 	return sha
-}
-
-func writeAtomic(path string, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".state-*")
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }

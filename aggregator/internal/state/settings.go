@@ -1,10 +1,8 @@
 package state
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"slices"
 	"time"
@@ -148,15 +146,16 @@ func dedupe(in []string) []string {
 }
 
 // loadSettings reads settings from path, falling back to defaults for a
-// missing or invalid file (the file is ours, but a bad edit must not brick it).
-func loadSettings(path string) Settings {
+// missing or invalid file. An invalid file is moved aside, not overwritten
+// by the next save, so favorites and hidden repos can be recovered by hand.
+func loadSettings(path string, now time.Time) (Settings, string) {
 	s := DefaultSettings()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return s
+	found, problem := loadJSON(path, &s, now)
+	if !found {
+		return DefaultSettings(), problem
 	}
-	if json.Unmarshal(b, &s) != nil || s.Validate() != nil {
-		return DefaultSettings()
+	if err := s.Validate(); err != nil {
+		return DefaultSettings(), quarantine(path, err, now)
 	}
-	return s
+	return s, ""
 }

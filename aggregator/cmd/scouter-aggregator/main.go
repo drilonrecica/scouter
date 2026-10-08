@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,8 +24,15 @@ import (
 	"github.com/drilonrecica/scouter/aggregator/internal/state"
 )
 
+// version is the commit this binary was built from, set by the Dockerfile.
+var version = "dev"
+
+// pollStalled is how long without a finished GitHub poll step (every 5 s,
+// failed or not) before /healthz reports the poller as hung.
+const pollStalled = 2 * time.Minute
+
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("build", version)
 	if err := run(log); err != nil {
 		log.Error("exiting", "err", err)
 		os.Exit(1)
@@ -59,6 +68,10 @@ func run(log *slog.Logger) error {
 	reportStorage(store, dataDir, log)
 	store.UsePhoneFiles(filepath.Join(dataDir, "phone.json"))
 	store.UseHistoryFile(filepath.Join(dataDir, "history.json"))
+	load, _ := store.StorageProblems()
+	for _, p := range load {
+		log.Error("unreadable data file", "problem", p)
+	}
 	apkPath := filepath.Join(dataDir, "app", "scouter.apk")
 	if rel, err := state.DescribeAPK(apkPath); err == nil {
 		store.SetApp(rel) // keep offering the last upload across restarts
@@ -67,20 +80,38 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Pollers stop with ctx; shutdown waits for them so no write to /data is
+	// cut off halfway.
+	var pollers sync.WaitGroup
+	defer pollers.Wait()
 	gh := github.NewClient(env("SCOUTER_GITHUB_API", "https://api.github.com"), ghToken, &http.Client{Timeout: 20 * time.Second})
 	poller := github.NewPoller(gh, store, ignore, log)
-	go poller.Run(ctx)
+	pollers.Go(func() { poller.Run(ctx) })
 	iconDir := filepath.Join(dataDir, "icons")
-	go icons.NewPoller(gh, icons.SiteClient(), store, iconDir, log).Run(ctx)
+	pollers.Go(func() { icons.NewPoller(gh, icons.SiteClient(), store, iconDir, log).Run(ctx) })
 
 	coolifyURL, coolifyToken := os.Getenv("SCOUTER_COOLIFY_URL"), os.Getenv("SCOUTER_COOLIFY_TOKEN")
 	if coolifyURL != "" && coolifyToken != "" {
-		go coolify.NewPoller(coolifyURL, coolifyToken, &http.Client{Timeout: 20 * time.Second}, store, log).Run(ctx)
+		cp := coolify.NewPoller(coolifyURL, coolifyToken, &http.Client{Timeout: 20 * time.Second}, store, log)
+		pollers.Go(func() { cp.Run(ctx) })
 	} else {
 		log.Info("coolify source off: set SCOUTER_COOLIFY_URL and SCOUTER_COOLIFY_TOKEN for deploy status")
 	}
 
 	api := server.New(store, phoneToken)
+	started := time.Now()
+	api.CheckHealth(version, func() []string {
+		_, problems := store.StorageProblems()
+		// LastPoll is the epoch until the first step; count from startup then.
+		last := poller.LastPoll()
+		if last.Before(started) {
+			last = started
+		}
+		if time.Since(last) > pollStalled {
+			problems = append(problems, fmt.Sprintf("github poller has not finished a step since %s", last.Format(time.RFC3339)))
+		}
+		return problems
+	})
 	api.ServeAPK(apkPath)
 	api.ServeIcons(iconDir)
 	api.AcceptAgentEvents(store, os.Getenv("SCOUTER_HOOK_TOKEN"))
@@ -93,7 +124,9 @@ func run(log *slog.Logger) error {
 		APKPath:  apkPath,
 		Log:      log,
 		Status: func() admin.Status {
-			return admin.Status{Clients: api.Clients(), Rate: gh.RateRemaining(), LastPoll: poller.LastPoll()}
+			load, save := store.StorageProblems()
+			return admin.Status{Clients: api.Clients(), Rate: gh.RateRemaining(), LastPoll: poller.LastPoll(),
+				Build: version, Storage: append(load, save...)}
 		},
 		Secrets: []admin.Secret{
 			{Name: "SCOUTER_TOKEN", Purpose: "phone access", Set: true},
@@ -109,19 +142,25 @@ func run(log *slog.Logger) error {
 	api.Handle("/admin", ui)
 	api.Handle("/admin/", ui)
 
-	// No WriteTimeout: /v1/stream is a long-lived response.
-	srv := &http.Server{Addr: addr, Handler: api, ReadHeaderTimeout: 10 * time.Second}
+	// No WriteTimeout: /v1/stream is a long-lived response (each stream
+	// write has its own deadline). Requests share ctx, so open streams end
+	// as soon as shutdown begins instead of holding it up.
+	srv := &http.Server{Addr: addr, Handler: api, ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return ctx }}
+	shutdownDone := make(chan error, 1)
 	go func() {
 		<-ctx.Done()
+		log.Info("shutting down")
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdown)
+		shutdownDone <- srv.Shutdown(shutdown)
 	}()
 	log.Info("listening", "addr", addr)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		stop()
 		return err
 	}
-	return nil
+	return <-shutdownDone
 }
 
 // reportStorage checks that the data dir is writable and publishes the result

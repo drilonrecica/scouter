@@ -6,7 +6,16 @@
   <div class="stat"><div class="label">GITHUB RATE LEFT</div><div class="value">{{if lt .Data.Rate 0}}—{{else}}{{.Data.Rate}}{{end}}</div><div class="hint">of 5000 / hour</div></div>
   <div class="stat"><div class="label">LAST POLL</div><div class="value">{{.Data.LastPoll}}</div></div>
   <div class="stat"><div class="label">PROJECTS</div><div class="value">{{.Data.Projects}}</div><div class="hint">{{.Data.Alerts}} open alert(s)</div></div>
+  <div class="stat"><div class="label">BUILD</div><div class="value">{{or .Data.Build "—"}}</div></div>
 </div>
+{{with .Data.Storage}}
+<h1>Storage</h1>
+<div class="panel">
+  <table>
+    {{range .}}<tr><td class="bad">{{.}}</td></tr>{{end}}
+  </table>
+</div>
+{{end}}
 
 <h1>Phone</h1>
 <div class="panel">
@@ -19,6 +28,7 @@
     <div class="stat"><div class="label">KIOSK</div><div class="value">{{if .LockTask}}locked{{else}}off{{end}}</div><div class="hint">device owner: {{if .DeviceOwner}}yes{{else}}no{{end}}</div></div>
     <div class="stat"><div class="label">WI-FI</div><div class="value">{{.WifiRSSI}} dBm</div><div class="hint">up {{$.Data.PhoneUptime}}</div></div>
   </div>
+  {{with .LastCrash}}<p class="hint">Last crash:</p><pre class="bad">{{.}}</pre>{{end}}
   {{else}}<p class="muted">The phone has not reported yet (app 0.3 or newer reports every minute).</p>{{end}}
 </div>
 
@@ -26,7 +36,7 @@
 <div class="panel">
   <table>
     <tr><th>SOURCE</th><th>STATE</th><th>SINCE</th></tr>
-    {{range .Data.Sources}}<tr><td>{{.Name}}</td><td class="{{if .OK}}ok{{else}}bad{{end}}">{{if .OK}}ok{{else}}{{.Error}}{{end}}</td><td class="muted">{{.Since}}</td></tr>{{else}}<tr><td colspan="3" class="muted">no data yet</td></tr>{{end}}
+    {{range .Data.Sources}}<tr><td>{{.Name}}</td><td class="{{if .OK}}ok{{else}}bad{{end}}">{{if .OK}}ok{{with .Error}} · {{.}}{{end}}{{else}}{{.Error}}{{end}}</td><td class="muted">{{.Since}}</td></tr>{{else}}<tr><td colspan="3" class="muted">no data yet</td></tr>{{end}}
   </table>
 </div>
 

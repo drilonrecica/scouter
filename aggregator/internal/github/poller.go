@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -25,6 +26,8 @@ const (
 	listedRepos    = 30
 	sourceName     = "github"
 	requestTimeout = 15 * time.Second
+	failBackoff    = 20 * time.Second // first retry of a failing repo, doubling
+	failBackoffMax = 30 * time.Minute
 )
 
 type repo struct {
@@ -40,6 +43,7 @@ type tracked struct {
 	project   state.Project
 	nextRuns  time.Time
 	nextPulls time.Time
+	failures  int // consecutive failed polls; spaces out retries
 }
 
 // Poller keeps the store's projects in sync with GitHub.
@@ -50,9 +54,10 @@ type Poller struct {
 	log    *slog.Logger
 	now    func() time.Time
 
-	nextList time.Time
-	repos    map[string]*tracked
-	lastStep atomic.Int64 // unix seconds of the last completed poll step
+	nextList    time.Time
+	pausedUntil time.Time // GitHub said the rate limit is spent
+	repos       map[string]*tracked
+	lastStep    atomic.Int64 // unix seconds of the last completed poll step
 }
 
 // LastPoll is when the poller last finished a step, for the admin status page.
@@ -82,30 +87,24 @@ func (p *Poller) Run(ctx context.Context) {
 
 // step does whatever is due now. Errors are reported through the store's
 // source status rather than stopping the loop: GitHub hiccups are routine.
+// A repo that fails (renamed, access revoked) backs off on its own and does
+// not hold up the others; a rate limit pauses everything until it resets.
 func (p *Poller) step(ctx context.Context) {
 	now := p.now()
-	var err error
-	if !now.Before(p.nextList) {
-		if err = p.listRepos(ctx); err == nil {
-			p.nextList = now.Add(listEvery)
-		}
-	}
-	for _, t := range p.repos {
-		if err != nil {
-			break
-		}
-		if !now.Before(t.nextRuns) {
-			err = p.pollRuns(ctx, t)
-		}
-		if err == nil && !now.Before(t.nextPulls) {
-			err = p.pollPulls(ctx, t)
-		}
+	err := p.poll(ctx, now)
+	var rl *RateLimitError
+	if errors.As(err, &rl) && rl.Until.After(now) {
+		p.pausedUntil = rl.Until
 	}
 	p.lastStep.Store(p.now().Unix())
 	src := state.Source{OK: err == nil, UpdatedAt: now}
 	if err != nil {
 		src.Error = err.Error()
 		p.log.Warn("github poll failed", "err", err)
+	} else if n, first := p.failing(); n > 0 {
+		// Some repos fail while GitHub itself answers: worth a line on the
+		// admin page, not a "GITHUB ERROR" on the phone.
+		src.Error = fmt.Sprintf("%d repo(s) failing, e.g. %s", n, first)
 	}
 	p.store.Update(func(in *state.Inputs) {
 		// Record only changes of health (UpdatedAt = since when), or the
@@ -115,6 +114,74 @@ func (p *Poller) step(ctx context.Context) {
 		}
 		in.Sources[sourceName] = src
 	})
+}
+
+// poll returns an error only when GitHub as a whole is unusable: the repo
+// list failed, a rate limit, or every tracked repo failed this step.
+func (p *Poller) poll(ctx context.Context, now time.Time) error {
+	if now.Before(p.pausedUntil) {
+		return &RateLimitError{Until: p.pausedUntil}
+	}
+	if !now.Before(p.nextList) {
+		if err := p.listRepos(ctx); err != nil {
+			return err
+		}
+		p.nextList = now.Add(listEvery)
+	}
+	failed := 0
+	var last error
+	for _, t := range p.repos {
+		due := !now.Before(t.nextRuns) || !now.Before(t.nextPulls)
+		if !due {
+			continue
+		}
+		err := p.pollRepo(ctx, t, now)
+		var rl *RateLimitError
+		if errors.As(err, &rl) {
+			return err
+		}
+		if err != nil {
+			failed++
+			last = err
+			t.failures++
+			wait := min(failBackoff<<min(t.failures-1, 16), failBackoffMax)
+			t.nextRuns, t.nextPulls = now.Add(wait), now.Add(wait)
+			p.log.Info("repo poll failed", "repo", t.project.FullName, "failures", t.failures, "retry_in", wait, "err", err)
+			continue
+		}
+		t.failures = 0
+	}
+	if failed > 0 && failed == len(p.repos) {
+		return last // nothing works: more likely GitHub or the token than the repos
+	}
+	return nil
+}
+
+func (p *Poller) pollRepo(ctx context.Context, t *tracked, now time.Time) error {
+	if !now.Before(t.nextRuns) {
+		if err := p.pollRuns(ctx, t); err != nil {
+			return err
+		}
+	}
+	if !now.Before(t.nextPulls) {
+		return p.pollPulls(ctx, t)
+	}
+	return nil
+}
+
+// failing counts repos whose last poll failed, naming one for the status page.
+func (p *Poller) failing() (int, string) {
+	var names []string
+	for name, t := range p.repos {
+		if t.failures > 0 {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return 0, ""
+	}
+	slices.Sort(names)
+	return len(names), names[0]
 }
 
 func (p *Poller) listRepos(ctx context.Context) error {
@@ -181,6 +248,7 @@ func (p *Poller) listRepos(ctx context.Context) error {
 	for name := range p.repos {
 		if !keep[name] {
 			delete(p.repos, name)
+			p.c.Forget(name)
 		}
 	}
 	slices.Sort(available)

@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/drilonrecica/scouter/aggregator/internal/state"
 )
@@ -19,7 +21,10 @@ type fakeGitHub struct {
 	mu     sync.Mutex
 	bodies map[string]any
 	full   map[string]int
+	hits   map[string]int // every request, 200 or not
 	fail   bool
+	// limited answers every request like an exhausted rate limit.
+	limited bool
 }
 
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +34,15 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad token", http.StatusUnauthorized)
 		return
 	}
+	f.hits[r.URL.Path]++
 	if f.fail {
 		http.Error(w, "boom", http.StatusBadGateway)
+		return
+	}
+	if f.limited {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(time.Hour).Unix()))
+		http.Error(w, "API rate limit exceeded", http.StatusForbidden)
 		return
 	}
 	body, ok := f.bodies[r.URL.Path]
@@ -51,7 +63,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func setup(t *testing.T) (*fakeGitHub, *Poller, *state.Store) {
 	t.Helper()
-	gh := &fakeGitHub{full: map[string]int{}, bodies: map[string]any{
+	gh := &fakeGitHub{full: map[string]int{}, hits: map[string]int{}, bodies: map[string]any{
 		"/user/repos": []map[string]any{
 			{"name": "app", "full_name": "me/app", "default_branch": "master", "pushed_at": t0},
 			{"name": "dusty", "full_name": "me/dusty", "default_branch": "main", "pushed_at": t0.Add(-1000 * 60 * 60 * 1e9), "archived": true},
@@ -158,5 +170,91 @@ func TestPollerFollowsSettings(t *testing.T) {
 	}
 	if p.c.RateRemaining() != -1 {
 		t.Fatalf("rate = %d, the fake sends no rate header", p.c.RateRemaining())
+	}
+}
+
+func TestPollerIsolatesAFailingRepo(t *testing.T) {
+	gh, p, store := setup(t)
+	gh.bodies["/user/repos"] = []map[string]any{
+		{"name": "app", "full_name": "me/app", "default_branch": "master", "pushed_at": t0},
+		{"name": "gone", "full_name": "me/gone", "default_branch": "main", "pushed_at": t0},
+	}
+	p.step(context.Background()) // me/gone has no runs endpoint: 404
+
+	st := store.Get()
+	if src := st.Sources["github"]; !src.OK || !strings.Contains(src.Error, "1 repo(s) failing") {
+		t.Fatalf("source = %+v: one broken repo must not turn GitHub red, only be noted", src)
+	}
+	var app *state.Project
+	for i := range st.Projects {
+		if st.Projects[i].FullName == "me/app" {
+			app = &st.Projects[i]
+		}
+	}
+	if app == nil || app.CI == nil || app.OpenPRs != 2 {
+		t.Fatalf("me/app = %+v: the healthy repo must still be polled", app)
+	}
+	if g := p.repos["me/gone"]; g.failures != 1 || !g.nextRuns.After(p.now()) {
+		t.Fatalf("me/gone = %+v: want one failure and a retry in the future", g)
+	}
+
+	// Next tick: me/gone is backing off, so it is not asked again.
+	hits := gh.hits["/repos/me/gone/actions/runs"]
+	p.step(context.Background())
+	if gh.hits["/repos/me/gone/actions/runs"] != hits {
+		t.Fatalf("me/gone polled again during its backoff")
+	}
+}
+
+func TestPollerPausesWhenRateLimited(t *testing.T) {
+	gh, p, store := setup(t)
+	gh.limited = true
+	p.step(context.Background())
+	if src := store.Get().Sources["github"]; src.OK || !strings.Contains(src.Error, "rate limited") {
+		t.Fatalf("source = %+v, want a rate limit error", src)
+	}
+	if !p.pausedUntil.After(p.now().Add(50 * time.Minute)) {
+		t.Fatalf("pausedUntil = %v, want the X-RateLimit-Reset an hour out", p.pausedUntil)
+	}
+
+	before := gh.hits["/user/repos"]
+	p.step(context.Background())
+	if gh.hits["/user/repos"] != before {
+		t.Fatalf("polled GitHub while paused for the rate limit")
+	}
+}
+
+func TestPlainForbiddenIsNotARateLimit(t *testing.T) {
+	resp := &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{"X-Ratelimit-Remaining": {"4000"}}}
+	if rateLimited(resp, t0) != nil {
+		t.Fatal("a 403 with budget left is an access problem, not a rate limit")
+	}
+	resp = &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"30"}}}
+	if rl := rateLimited(resp, t0); rl == nil || !rl.Until.Equal(t0.Add(30*time.Second)) {
+		t.Fatalf("rl = %+v, want Retry-After honoured", rl)
+	}
+}
+
+func TestPollerForgetsCacheOfDroppedRepos(t *testing.T) {
+	gh, p, _ := setup(t)
+	p.step(context.Background())
+	cachedFor := func(repo string) (n int) {
+		p.c.mu.Lock()
+		defer p.c.mu.Unlock()
+		for u := range p.c.cache {
+			if strings.Contains(u, "/repos/"+repo+"/") {
+				n++
+			}
+		}
+		return n
+	}
+	if cachedFor("me/app") == 0 {
+		t.Fatal("me/app answers should be cached")
+	}
+	gh.bodies["/user/repos"] = []map[string]any{}
+	p.nextList = p.now().Add(-1)
+	p.step(context.Background())
+	if n := cachedFor("me/app"); n != 0 {
+		t.Fatalf("%d cached answers kept for a repo no longer tracked", n)
 	}
 }
