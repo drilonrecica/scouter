@@ -17,7 +17,21 @@ data class DashState(
     val available: List<String> = emptyList(),
     /** False for an aggregator too old to send settings: the phone then uses its local fallbacks. */
     val hasSettings: Boolean = false,
+    /** The APK the server wants this phone to run (over-the-air update). */
+    val app: AppRelease? = null,
+    /** Power over the last 14 days per project, oldest first, -1 = unknown. */
+    val history: Map<String, List<Int>> = emptyMap(),
+    /** Live Claude Code sessions, waiting ones first. */
+    val agents: List<Agent> = emptyList(),
+    /** What happened in the last 24 h, oldest first (morning briefing). */
+    val events: List<Event> = emptyList(),
 )
+
+data class Agent(val id: String, val project: String, val state: String, val since: Instant?)
+
+data class Event(val at: Instant?, val project: String, val kind: String, val text: String)
+
+data class AppRelease(val sha256: String, val size: Long)
 
 /**
  * Mirrors aggregator/internal/state/settings.go. The server owns it; the
@@ -38,6 +52,8 @@ data class Settings(
     val stars: Boolean = true,
     val mesh: Boolean = false,
     val alertHours: Int = 12,
+    val wave: Boolean = true,
+    val briefing: Boolean = true,
 ) {
     fun toJson(): String = JSONObject()
         .put("hidden", JSONArray(hidden))
@@ -49,6 +65,8 @@ data class Settings(
         .put("kiosk", kiosk)
         .put("background", JSONObject().put("aura", aura).put("stars", stars).put("mesh", mesh))
         .put("alert_hours", alertHours)
+        .put("wave", wave)
+        .put("briefing", briefing)
         .toString()
 
     companion object {
@@ -71,6 +89,8 @@ data class Settings(
                 stars = bg?.optBoolean("stars", d.stars) ?: d.stars,
                 mesh = bg?.optBoolean("mesh", d.mesh) ?: d.mesh,
                 alertHours = o.optInt("alert_hours", d.alertHours),
+                wave = o.optBoolean("wave", d.wave),
+                briefing = o.optBoolean("briefing", d.briefing),
             )
         }
 
@@ -88,6 +108,21 @@ data class Project(
     /** Build health 0..9000 (share of recent default-branch commits that passed); null = no record yet. */
     val power: Int?,
     val openPRs: Int,
+    /** Latest Coolify deployment, when the repo has a Coolify app. */
+    val deploy: Deploy? = null,
+    /** The deployed commit is one whose CI failed. */
+    val mismatch: Boolean = false,
+)
+
+data class Deploy(
+    /** RUNNING covers queued and in-progress deploys. */
+    val status: Status,
+    val commit: String,
+    val branch: String,
+    val at: Instant?,
+    /** Coolify's container state, e.g. "running:healthy". */
+    val health: String,
+    val apps: Int,
 )
 
 data class Run(
@@ -100,6 +135,9 @@ data class Run(
 )
 
 enum class Status { RUNNING, SUCCESS, FAILURE, CANCELLED, NONE }
+
+/** How one attempt at the live stream ended. */
+enum class StreamOutcome { ENDED_AFTER_DATA, STARVED, FAILED }
 
 data class Alert(val id: String, val kind: String, val project: String, val text: String, val at: Instant?)
 
@@ -124,6 +162,16 @@ object Parser {
             o.optLong("version"), o.optString("focus"), projects, alerts, sources,
             Settings.parse(o.optJSONObject("settings")), Settings.strings(o.optJSONArray("available")),
             hasSettings = o.has("settings"),
+            history = o.optJSONObject("history")?.let { h ->
+                h.keys().asSequence().associateWith { k -> h.getJSONArray(k).let { a -> List(a.length()) { a.getInt(it) } } }
+            }.orEmpty(),
+            agents = o.optJSONArray("agents")?.let { a ->
+                List(a.length()) { a.getJSONObject(it).let { x -> Agent(x.optString("id"), x.optString("project"), x.optString("state"), instant(x, "since")) } }
+            }.orEmpty(),
+            events = o.optJSONArray("events")?.let { a ->
+                List(a.length()) { a.getJSONObject(it).let { x -> Event(instant(x, "at"), x.optString("project"), x.optString("kind"), x.optString("text")) } }
+            }.orEmpty(),
+            app = o.optJSONObject("app")?.let { AppRelease(it.optString("sha256"), it.optLong("size")) }?.takeIf { it.sha256.length == 64 },
         )
     }
 
@@ -136,6 +184,23 @@ object Parser {
         latest = o.optJSONObject("latest")?.let(::run),
         power = if (o.has("power")) o.getInt("power") else null,
         openPRs = o.optInt("open_prs"),
+        deploy = o.optJSONObject("deploy")?.let { d ->
+            Deploy(
+                status = when (d.optString("status")) {
+                    "success" -> Status.SUCCESS
+                    "failure" -> Status.FAILURE
+                    "running", "queued" -> Status.RUNNING
+                    "cancelled" -> Status.CANCELLED
+                    else -> Status.NONE
+                },
+                commit = d.optString("commit"),
+                branch = d.optString("branch"),
+                at = instant(d, "at"),
+                health = d.optString("health"),
+                apps = d.optInt("apps", 1),
+            )
+        },
+        mismatch = o.optBoolean("mismatch"),
     )
 
     private fun run(o: JSONObject) = Run(

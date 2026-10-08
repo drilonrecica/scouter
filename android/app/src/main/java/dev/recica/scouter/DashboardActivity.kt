@@ -77,7 +77,15 @@ class DashboardActivity : Activity() {
         setTurnScreenOn(true)
         view = DashboardView(this)
         view.dismissed = prefs.dismissed
-        setContentView(view)
+        // Rendered into a GPU texture once and only re-rendered when it changes:
+        // the scan line animates on top without re-rasterising the HUD.
+        view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        val sweep = SweepView(this)
+        view.sweep = sweep
+        setContentView(android.widget.FrameLayout(this).apply {
+            addView(view)
+            addView(sweep) // on top, transparent, ignores touches
+        })
         val gestures = GestureDetector(this, Gestures())
         view.setOnTouchListener { _, e -> gestures.onTouchEvent(e); true }
         StreamService.start(this)
@@ -139,6 +147,11 @@ class DashboardActivity : Activity() {
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             val s = Hub.state ?: return false
+            if (view.briefingShown(java.time.Instant.now())) {
+                Hub.briefingUntil = java.time.Instant.EPOCH
+                view.invalidate()
+                return true
+            }
             val onBanner = e.y < view.bannerHeight()
             val cardShowing = Logic.openAlerts(s, prefs.dismissed).any { a ->
                 Hub.alertSeenAt[a.id]?.let { java.time.Duration.between(it, java.time.Instant.now()).seconds < DashboardView.CARD_SECONDS } == true
@@ -213,10 +226,12 @@ class ConfigReceiver : BroadcastReceiver() {
     }
 }
 
-/** Brings the dashboard back after a reboot. */
+/** Brings the dashboard back after a reboot or an update. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // Also after our own update: the installer replaces the process and
+        // nothing else would bring the dashboard (and kiosk) back.
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         StreamService.start(ctx)
         ctx.startActivity(Intent(ctx, DashboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }

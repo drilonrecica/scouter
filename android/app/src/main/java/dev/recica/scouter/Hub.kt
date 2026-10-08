@@ -20,11 +20,19 @@ object Hub {
     var disconnectedSince: Instant? = Instant.now()
         private set
 
+    /** True while the stream is being buffered and the service polls instead. */
+    var polling = false
+        private set
+
     /** Screen should stay on: inside the schedule, or woken by a fresh alert. */
     var wantScreenOn = false
         set(v) {
             if (field != v) { field = v; notifyListeners() }
         }
+
+    /** Morning briefing window, set by the service when the schedule turns the screen on. */
+    var briefingUntil: Instant = Instant.EPOCH
+    var briefingSince: Instant? = null
 
     /** When each alert was first seen on this phone: drives card (fresh) vs banner. */
     val alertSeenAt = mutableMapOf<String, Instant>()
@@ -42,6 +50,10 @@ object Hub {
     fun applySettings(next: Settings) {
         state = state?.copy(settings = next)
         notifyListeners()
+    }
+
+    fun postPolling(p: Boolean) = main.post {
+        if (p != polling) { polling = p; notifyListeners() }
     }
 
     fun postConnected(c: Boolean) = main.post {
@@ -72,6 +84,13 @@ class Prefs(ctx: Context) {
     var schedule: String
         get() = p.getString("schedule", "1-5 09:00-19:00")!!
         set(v) = p.edit().putString("schedule", v).apply()
+    /** Hash of the last APK this phone tried to install over the air. */
+    var otaTried: String
+        get() = p.getString("ota_tried", "")!!
+        set(v) = p.edit().putString("ota_tried", v).apply()
+    var otaResult: String
+        get() = p.getString("ota_result", "")!!
+        set(v) = p.edit().putString("ota_result", v).apply()
     var dismissed: Set<String>
         get() = p.getStringSet("dismissed", emptySet())!!
         set(v) = p.edit().putStringSet("dismissed", v).apply()

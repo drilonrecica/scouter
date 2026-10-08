@@ -25,7 +25,8 @@ class LogicTest {
         val s = Parser.parse(
             """{"version":7,"focus":"me/a","projects":[{"name":"a","full_name":"me/a","default_branch":"master",
                "pushed_at":"2026-10-07T11:00:00Z","ci":{"status":"failure","branch":"master","sha":"x","title":"fix it",
-               "workflow":"Lint","started_at":"2026-10-07T11:01:00Z","duration_s":75,"url":"u"},"power":6750,"open_prs":2},
+               "workflow":"Lint","started_at":"2026-10-07T11:01:00Z","duration_s":75,"url":"u"},"power":6750,"open_prs":2,
+               "deploy":{"status":"success","commit":"x1234567","branch":"master","at":"2026-10-07T11:05:00Z","health":"running:healthy","apps":2},"mismatch":true},
                {"name":"b","full_name":"me/b","default_branch":"main","open_prs":0}],
                "alerts":[{"id":"ci:me/a:x","kind":"ci_failed","project":"me/a","text":"t","at":"2026-10-07T13:03:00.123456789+02:00"}],
                "sources":{"github":{"ok":false,"error":"boom","updated_at":"2026-10-07T11:00:00Z"}}}""",
@@ -33,6 +34,13 @@ class LogicTest {
         assertEquals(7, s.version)
         val a = s.projects.first()
         assertEquals(6750, a.power)
+        assertEquals(Status.SUCCESS, a.deploy!!.status)
+        assertEquals(2, a.deploy!!.apps)
+        assertTrue(a.mismatch)
+        assertNull(s.projects[1].deploy)
+        assertEquals("healthy", Logic.health(a.deploy!!.health))
+        assertEquals("", Logic.health("unknown"))
+        assertEquals("⚠ DEPLOYED WHILE CI RED", Logic.alertHeadline("deployed_red"))
         assertNull(s.projects[1].power)
         assertEquals(Status.FAILURE, a.ci!!.status)
         assertEquals("Lint", a.ci!!.workflow)
@@ -83,7 +91,8 @@ class LogicTest {
     @Test
     fun settingsRoundTrip() {
         val s = Settings(hidden = listOf("me/x"), favorites = listOf("me/a", "me/b"), focusMode = "rotate", rotateMinutes = 7,
-            days = "6-2", on = "08:30", off = "20:15", kiosk = true, aura = false, stars = true, mesh = true, alertHours = 3)
+            days = "6-2", on = "08:30", off = "20:15", kiosk = true, aura = false, stars = true, mesh = true, alertHours = 3,
+            wave = false, briefing = false)
         assertEquals(s, Settings.parse(org.json.JSONObject(s.toJson())))
         assertEquals(Settings(), Settings.parse(null)) // older server: defaults
     }
@@ -143,5 +152,46 @@ class LogicTest {
         val new = state(p("a", null, power = 6750), p("b", null, power = 4500), p("c", null, power = 9000))
         assertEquals(mapOf("me/a" to (9000 to 6750)), Logic.powerChanges(old, new))
         assertTrue(Logic.powerChanges(null, new).isEmpty())
+    }
+
+    @Test
+    fun streamFallback() {
+        assertEquals(Logic.Next.POLL, Logic.afterStream(StreamOutcome.STARVED))
+        assertEquals(Logic.Next.RECONNECT_NOW, Logic.afterStream(StreamOutcome.ENDED_AFTER_DATA))
+        assertEquals(Logic.Next.BACK_OFF, Logic.afterStream(StreamOutcome.FAILED))
+    }
+
+    @Test
+    fun ledBlueWhenAnAgentWaits() {
+        val waiting = state(p("a", Status.SUCCESS)).copy(agents = listOf(Agent("s", "igris", "waiting", now)))
+        assertEquals(Logic.Led.BLUE, Logic.led(waiting, true, emptySet()))
+        val alert = Alert("x", "ci_failed", "me/a", "t", now)
+        assertEquals(Logic.Led.RED, Logic.led(waiting.copy(alerts = listOf(alert)), true, emptySet())) // red still wins
+    }
+
+    @Test
+    fun wave() {
+        val w = Logic.Wave()
+        assertFalse(w.onReading(false, 0))
+        assertFalse(w.onReading(true, 1_000))
+        assertTrue(w.onReading(false, 1_600)) // near for 0.6 s: a wave
+        assertFalse(w.onReading(true, 5_000))
+        assertFalse(w.onReading(false, 9_000)) // near for 4 s: something parked on it, not a wave
+        assertFalse(w.onReading(false, 9_100)) // far without near first
+    }
+
+    @Test
+    fun parsesHistoryAgentsEventsAndBriefing() {
+        val s = Parser.parse(
+            """{"version":1,"focus":"","projects":[],"alerts":[],"sources":{},
+               "history":{"me/a":[-1,9000,6750]},
+               "agents":[{"id":"s1","project":"igris","state":"waiting","since":"2026-10-07T11:00:00Z"}],
+               "events":[{"at":"2026-10-07T02:00:00Z","project":"me/a","kind":"ci_failed","text":"x"},
+                         {"at":"2026-10-07T10:00:00Z","project":"me/a","kind":"ci_recovered","text":"y"}]}""",
+        )
+        assertEquals(listOf(-1, 9000, 6750), s.history["me/a"])
+        assertEquals("igris", s.agents.single().project)
+        assertEquals(listOf("ci_recovered"), Logic.briefing(s, Instant.parse("2026-10-07T05:00:00Z")).map { it.kind })
+        assertEquals(2, Logic.briefing(s, null).size)
     }
 }

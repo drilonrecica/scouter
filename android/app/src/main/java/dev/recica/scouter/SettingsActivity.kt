@@ -94,6 +94,8 @@ class SettingsActivity : Activity() {
         timeRow("On from", draft.on) { draft = draft.copy(on = it); build(s) }
         timeRow("Off at", draft.off) { draft = draft.copy(off = it); build(s) }
         number("Alerts for failures younger than (hours)", draft.alertHours, 1, 72) { draft = draft.copy(alertHours = it) }
+        toggle("Wave to wake (peek at night for 20 s)", draft.wave) { draft = draft.copy(wave = it) }
+        toggle("Morning briefing when the screen turns on", draft.briefing) { draft = draft.copy(briefing = it) }
 
         section("KIOSK")
         val owner = Kiosk.isOwner(this)

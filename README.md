@@ -24,10 +24,15 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 | **Focus** | One project large: CI status of the default branch, workflow, commit, duration, newer runs on other branches, open PRs (bots excluded), power level. Follows your latest push (`TRACKING`), a pinned project (`LOCKED`) or cycles your favorites (`ROTATING`). Long-press to pin/unpin. |
 | **Grid** | The 9 most relevant projects: favorites first in your order, then failing, running, the rest. Power levels and the average. Tap a tile to pin it. |
 | **Backdrop** | Ki aura (edge glow in the LED's colour), star field (re-seeded every minute) and hex lens mesh, each switchable. Dim by design. |
-| **Settings** | Long-press the top strip. Favorites, hidden repos, focus mode, screen hours, kiosk, backdrop. |
+| **Settings** | Long-press the top strip. Favorites, hidden repos, focus mode, screen hours, kiosk, backdrop, wave, briefing. |
+| **Deploys** | With Coolify connected: each repo's latest deployment (LIVE / DEPLOYING / DEPLOY FAILED) beside its CI, a grid glyph, and `⚠ DEPLOYED WHILE CI RED` when Coolify shipped a commit whose CI failed (it deploys on push without waiting). |
+| **Agents** | Third screen: your Claude Code sessions as WAITING / WORKING / DONE. A waiting session turns the LED blue and shows `◆ WAITING` in Focus. |
+| **History** | 14-day power sparkline under PWR. |
+| **Briefing** | When the screen turns on in the morning: what broke, recovered and deployed overnight (30 s, tap to close). |
+| **Wave** | At night, wave over the top of the phone to see the dashboard for 20 s. |
 | **Alert** | A *new* failure on a default branch (less than 12 h old) cracks the lens: `POWER LEVEL DROPPING`, `PWR 9000 → 6750`. Takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen when it is off. |
 | **Power level** | Build health, 0–9000: the share of the last 20 finished default-branch commits that passed (a commit passes when all its workflows do). `----` until there is a record. Every Grid project at 9000 earns an `IT'S OVER 9000!`. |
-| **LED** (screen off) | red = undismissed alert · amber = a build is running · green = all quiet · purple = no connection |
+| **LED** (screen off) | red = undismissed alert · blue = an agent waits for you · amber = a build is running · green = all quiet · purple = no connection |
 
 Swipe left/right to change screens. The screen is on during the schedule
 (default Mon–Fri 09:00–19:00) and off otherwise, for burn-in and power.
@@ -84,12 +89,17 @@ of `/admin*`.
 | `SCOUTER_TOKEN` | required: bearer token the phone sends |
 | `SCOUTER_GITHUB_TOKEN` | required: fine-grained PAT, read-only *Actions*, *Contents*, *Pull requests*, *Metadata* on all your repos |
 | `SCOUTER_ADMIN_PASSWORD` | optional: enables the admin UI (min 12 chars) |
+| `SCOUTER_COOLIFY_URL` / `SCOUTER_COOLIFY_TOKEN` | optional: deploy status (read-only API token, without *read:sensitive*) |
+| `SCOUTER_HOOK_TOKEN` | optional: a token only for Claude Code hooks (the phone token also works) |
 | `SCOUTER_IGNORE_REPOS` | optional: `owner/repo` list hidden on top of the settings |
 | `SCOUTER_ADDR` | default `:8080` |
 | `SCOUTER_DATA_DIR` | default `/data`; holds `state.json` so restarts don't start empty |
 
 Endpoints: `GET /v1/stream` (SSE, full state on every change, ping every 25 s),
-`GET /v1/state` (with ETag), `GET /healthz`.
+`GET /v1/state` (with ETag), `PUT /v1/settings`, `POST /v1/heartbeat`,
+`GET /v1/app.apk`, `POST /v1/agent-events`, `GET /healthz`. The phone falls
+back to polling `/v1/state` when a proxy buffers the stream, and retries the
+stream every 10 minutes.
 
 **Coolify:** new resource → this repo, build pack *Dockerfile*, base directory
 `/aggregator`, port 8080, a persistent volume on `/data`, the env vars above as
@@ -148,6 +158,22 @@ device owner*, or if the phone is unreachable:
 ```sh
 adb shell am broadcast -n dev.recica.scouter/.ConfigReceiver --ez release_owner true
 ```
+
+### Over-the-air updates
+
+With Scouter as device owner, upload a newer APK (same signing key, higher
+`versionCode`) on the admin **App** page. The phone downloads it, checks its
+sha256, installs it silently and restarts itself; each upload is tried once,
+the result shows on the admin status page.
+
+### Claude Code agents
+
+`~/.config/scouter/hook.sh` (copy of `tools/claude-hook.sh`) reports session state to the aggregator. It
+forwards only `session_id`, `cwd` and the event name (never prompts or
+transcripts), runs in the background and always exits 0. Register it for
+`UserPromptSubmit`, `Notification`, `Stop` and `SessionEnd` in
+`~/.claude/settings.json`; put the URL in `~/.config/scouter/url` and
+`Authorization: Bearer <token>` in `~/.config/scouter/auth-header` (0600).
 
 ### Other phones?
 

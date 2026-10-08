@@ -28,7 +28,23 @@ object Logic {
         }.toMap()
     }
 
-    enum class Led { GREEN, AMBER, RED, PURPLE }
+    enum class Led { GREEN, AMBER, RED, BLUE, PURPLE }
+
+    fun waiting(s: DashState): List<Agent> = s.agents.filter { it.state == "waiting" }
+
+    enum class Next { RECONNECT_NOW, BACK_OFF, POLL }
+
+    /**
+     * What to do after a stream attempt. A stream that connected but never
+     * delivered a state is being buffered by a proxy: retrying would loop
+     * forever, so poll instead. A stream that worked and then dropped is
+     * routine (deploys, network blips): reconnect at once.
+     */
+    fun afterStream(o: StreamOutcome): Next = when (o) {
+        StreamOutcome.STARVED -> Next.POLL
+        StreamOutcome.ENDED_AFTER_DATA -> Next.RECONNECT_NOW
+        StreamOutcome.FAILED -> Next.BACK_OFF
+    }
 
     fun status(p: Project): Status = p.ci?.status ?: Status.NONE
 
@@ -80,6 +96,9 @@ object Logic {
 
     fun openAlerts(s: DashState, dismissed: Set<String>): List<Alert> = s.alerts.filter { it.id !in dismissed }
 
+    /** Whether an undismissed alert could be on screen (no lens sweep over the alert card). */
+    fun freshAlertVisible(s: DashState, dismissed: Set<String>): Boolean = openAlerts(s, dismissed).isNotEmpty()
+
     /**
      * The LED only goes red for fresh trouble (an undismissed alert): with
      * several long-red repos, "any failure" would make it permanently red and
@@ -88,9 +107,38 @@ object Logic {
     fun led(s: DashState?, connected: Boolean, dismissed: Set<String>): Led = when {
         s == null || !connected -> Led.PURPLE
         openAlerts(s, dismissed).isNotEmpty() -> Led.RED
+        waiting(s).isNotEmpty() -> Led.BLUE
         s.projects.any { it.ci?.status == Status.RUNNING || it.latest?.status == Status.RUNNING } -> Led.AMBER
         else -> Led.GREEN
     }
+
+    /**
+     * Wave detection on the proximity sensor: a hand passing over the phone
+     * reads near and then far again within [WAVE_MS]. Keeping it here keeps
+     * the rule testable; the service just feeds it sensor events.
+     */
+    class Wave {
+        private var nearAt = -1L
+
+        /** Feed one reading; true when it completes a wave. */
+        fun onReading(near: Boolean, atMs: Long): Boolean {
+            if (near) {
+                nearAt = atMs
+                return false
+            }
+            val waved = nearAt >= 0 && atMs - nearAt in 0..WAVE_MS
+            nearAt = -1
+            return waved
+        }
+
+        companion object {
+            const val WAVE_MS = 1_500L
+        }
+    }
+
+    /** Events for the morning briefing: what happened since the screen went dark. */
+    fun briefing(s: DashState, since: Instant?): List<Event> =
+        s.events.filter { e -> since == null || (e.at != null && e.at.isAfter(since)) }
 
     /** "1-5 09:00-19:00": days (1 = Monday) and the hours the screen is on. */
     data class Schedule(val firstDay: Int, val lastDay: Int, val on: LocalTime, val off: LocalTime) {
@@ -137,6 +185,24 @@ object Logic {
         r.status == Status.RUNNING && r.startedAt != null -> duration(Duration.between(r.startedAt, now).seconds.coerceAtLeast(0))
         r.durationS > 0 -> duration(r.durationS.toLong())
         else -> ""
+    }
+
+    fun deployLabel(st: Status) = when (st) {
+        Status.SUCCESS -> "LIVE"
+        Status.FAILURE -> "DEPLOY FAILED"
+        Status.RUNNING -> "DEPLOYING"
+        Status.CANCELLED -> "CANCELLED"
+        Status.NONE -> "UNKNOWN"
+    }
+
+    /** "running:healthy" -> "healthy"; empty when Coolify reports nothing useful. */
+    fun health(raw: String): String = raw.substringAfter(':', raw).takeIf { it.isNotBlank() && it != "unknown" }.orEmpty()
+
+    /** Header of the alert card, per kind of trouble. */
+    fun alertHeadline(kind: String) = when (kind) {
+        "deploy_failed" -> "⚠ DEPLOY FAILED"
+        "deployed_red" -> "⚠ DEPLOYED WHILE CI RED"
+        else -> "⚠ POWER LEVEL DROPPING"
     }
 
     fun label(st: Status) = when (st) {
