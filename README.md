@@ -35,12 +35,14 @@ GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (K
 | **Icons** | Each project's own icon beside its name in Focus and Grid, dimmed so status stays the brightest thing on screen. The aggregator looks for an icon file in the repo (`logo.png`, `apple-touch-icon.png`, a favicon, Android's `ic_launcher.png`…), else the favicon of the deployed site (Coolify URL or the repo's homepage); SVG-only icons are skipped. |
 | **Briefing** | When the screen turns on in the morning: what broke, recovered and deployed overnight (30 s, tap to close). |
 | **Wave** | At night, wave over the top of the phone to see the dashboard for 20 s. |
-| **Alert** | A *new* failure on a default branch (less than 12 h old) cracks the lens: `POWER LEVEL DROPPING`, `PWR 9000 → 6750`. Takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen when it is off. |
+| **Alert** | A *new* failure on a default branch (less than 12 h old) cracks the lens: `POWER LEVEL DROPPING`, `PWR 9000 → 6750`. Takes over the screen for a minute, then stays as a red strip until tapped. Wakes the screen for 5 minutes when it is off (once per alert, also across restarts). |
 | **Power level** | Build health, 0–9000: the share of the last 20 finished default-branch commits that passed (a commit passes when all its workflows do). `----` until there is a record. Every Grid project at 9000 earns an `IT'S OVER 9000!`. |
 | **LED** (screen off) | red = undismissed alert · blue = an agent waits for you · amber = a build is running · green = all quiet · purple = no connection |
 
 Swipe left/right to change screens. The screen is on during the schedule
 (default Mon–Fri 09:00–19:00) and off otherwise, for burn-in and power.
+The on time must be before the off time: overnight schedules (22:00–06:00)
+are not supported.
 
 Long-standing red builds are deliberately **not** alerts: they show red in
 Grid, but only fresh breakage lights the LED. Hide repos you don't care about
@@ -103,15 +105,30 @@ of `/admin*`.
 
 Endpoints: `GET /v1/stream` (SSE, full state on every change, ping every 25 s),
 `GET /v1/state` (with ETag), `PUT /v1/settings`, `POST /v1/heartbeat`,
-`GET /v1/app.apk`, `POST /v1/agent-events`, `GET /healthz`. The phone falls
+`GET /v1/app.apk`, `GET /v1/icons/{hash}`, `POST /v1/agent-events`,
+`GET`/`POST /v1/release` (release token), `GET /healthz`. The phone falls
 back to polling `/v1/state` when a proxy buffers the stream, and retries the
 stream every 10 minutes.
+
+The document carries a `schema` number. It goes up only for changes an older
+app would misread; the phone then shows `UPDATE APP` instead of guessing.
+
+**Resilience.** A repo that fails (renamed, access revoked) backs off on its
+own and is noted on the admin status page without holding up the others; a
+GitHub rate limit pauses polling until the reset time GitHub sends. Files in
+`/data` are written atomically and flushed to disk. A file that cannot be
+read at startup is kept as `<name>.bad-<time>` (never overwritten) and listed
+on the admin status page, and so is any file that fails to save.
 
 **Coolify:** new resource → this repo, build pack *Dockerfile*, base directory
 `/aggregator`, port 8080, a persistent volume on `/data`, the env vars above as
 secrets. Leave Coolify's health check **off**: the image is distroless (no
 `curl`/`wget` inside), and Coolify runs its checks inside the container, so
-an enabled check fails every deploy. Check `/healthz` from outside instead.
+an enabled check fails every deploy. Check `/healthz` from outside instead
+(an uptime monitor): it answers `ok <commit>`, or `503` with the reasons
+when a file in `/data` cannot be saved or the GitHub poller has stalled.
+The commit comes from Coolify's `SOURCE_COMMIT` build argument and also
+shows on the admin status page.
 
 Local run: `cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make run`
 
@@ -169,13 +186,22 @@ adb shell am broadcast -n dev.recica.scouter/.ConfigReceiver --ez release_owner 
 
 With Scouter as device owner, upload a newer APK (same signing key, higher
 `versionCode`) on the admin **App** page. The phone downloads it, checks its
-sha256, installs it silently and restarts itself; each upload is tried once,
-the result shows on the admin status page.
+sha256, installs it silently and restarts itself. Each upload is installed at
+most once; a download that fails is retried every 5 minutes. The result, and
+the app's last crash if any, show on the admin status page.
 
 Or from the build machine in one go: `tools/release.sh` bumps the version,
 builds, publishes with `SCOUTER_RELEASE_TOKEN` (a token that can only publish
-APKs; locally in `~/.config/scouter/release-token`) and waits until the phone
-reports the new version.
+APKs; locally in `~/.config/scouter/release-token`), commits the version bump,
+tags it `v<version>` and waits until the phone reports the new version. It
+refuses to run with uncommitted changes under `android/`, so each tag is
+exactly the code on the phone. Push the tags with `git push --follow-tags`.
+
+**Back up the signing key.** Releases are signed with the build machine's
+debug key (`~/.android/debug.keystore`). Android only installs an update
+signed with the same key, so if that file is lost, over-the-air updates stop
+and the app has to be reinstalled over adb (release device ownership first).
+Keep a copy of it somewhere safe.
 
 ### Claude Code agents
 

@@ -15,17 +15,23 @@ import java.util.concurrent.Executors
  * Over-the-air updates: when the server offers an APK whose hash this phone
  * has not tried yet, download it, check the hash and install it with a
  * package-installer session. As device owner that is silent. Android itself
- * refuses other signing keys and downgrades. Each hash is tried once, so a
- * broken upload cannot cause an install loop.
+ * refuses other signing keys and downgrades. Each hash is installed at most
+ * once, so a broken upload cannot cause an install loop; a download that
+ * fails or arrives damaged is retried, at most every [RETRY_MS].
  */
 object Ota {
+    private const val RETRY_MS = 5 * 60_000L
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var busy = false
+    @Volatile private var lastAttempt = 0L
 
     fun check(ctx: Context, s: DashState) {
         val app = s.app ?: return
         val prefs = Prefs(ctx.applicationContext)
         if (busy || app.sha256 == prefs.otaTried || !Kiosk.isOwner(ctx)) return
+        val now = System.currentTimeMillis()
+        if (now - lastAttempt < RETRY_MS) return
+        lastAttempt = now
         busy = true
         val appCtx = ctx.applicationContext
         io.execute {
@@ -40,7 +46,6 @@ object Ota {
     }
 
     private fun install(ctx: Context, prefs: Prefs, app: AppRelease) {
-        prefs.otaTried = app.sha256 // before anything can fail: one attempt per upload
         val file = File(ctx.cacheDir, "update.apk")
         val c = URL(prefs.url + "/v1/app.apk").openConnection() as HttpURLConnection
         try {
@@ -54,6 +59,9 @@ object Ota {
         }
         val sha = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
         check(sha == app.sha256) { "hash mismatch" }
+        // From here on, one attempt per upload: a failed install is not retried.
+        // Saved synchronously, since a successful install replaces this process.
+        prefs.markOtaTried(app.sha256)
 
         val installer = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {

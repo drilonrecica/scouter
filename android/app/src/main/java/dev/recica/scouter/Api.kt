@@ -19,6 +19,7 @@ object Api {
      */
     fun saveSettings(ctx: Context, next: Settings, done: (String?) -> Unit = {}) {
         val prefs = Prefs(ctx)
+        val base = Hub.state?.settingsJson // read before applySettings replaces the state
         Hub.applySettings(next)
         io.execute {
             val error = runCatching {
@@ -30,7 +31,7 @@ object Api {
                     c.doOutput = true
                     c.setRequestProperty("Authorization", "Bearer " + prefs.token)
                     c.setRequestProperty("Content-Type", "application/json")
-                    c.outputStream.use { it.write(next.toJson().toByteArray()) }
+                    c.outputStream.use { it.write(next.toJson(base).toByteArray()) }
                     when (val code = c.responseCode) {
                         204, 200 -> null
                         404, 405 -> "server too old for settings (redeploy the aggregator)"

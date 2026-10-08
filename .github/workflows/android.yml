@@ -36,5 +36,8 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
+      - name: Lint
+        run: ./gradlew --no-daemon :app:lintRelease
+
       - name: Release build
         run: ./gradlew --no-daemon :app:assembleRelease

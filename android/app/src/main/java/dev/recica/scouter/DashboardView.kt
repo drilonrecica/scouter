@@ -509,6 +509,7 @@ class DashboardView(ctx: Context) : View(ctx) {
     private fun connectionIssue(s: DashState, now: Instant): Pair<String, Int>? = when {
         !Hub.connected -> ("NO SIGNAL " + Logic.ago(Hub.disconnectedSince, now).removeSuffix(" ago")) to PURPLE
         Hub.polling -> "POLLING · NO STREAM" to AMBER
+        s.schema > Parser.SCHEMA -> "UPDATE APP" to AMBER // the server speaks a newer format
         s.sources["github"]?.ok == false -> "GITHUB ERROR" to AMBER
         else -> null
     }

@@ -36,15 +36,29 @@ class StreamService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
     private val main = Handler(Looper.getMainLooper())
 
-    @Volatile private var running = false
-    @Volatile private var conn: HttpURLConnection? = null
-    private var thread: Thread? = null
+    /**
+     * One stream thread and its open connection. A restart retires the old
+     * link and starts a new one; the old thread sees [alive] go false and
+     * ends on its own, so two threads never share a flag or a connection.
+     */
+    private class Link {
+        @Volatile var alive = true
+        @Volatile var conn: HttpURLConnection? = null
+        var thread: Thread? = null
+
+        fun stop() {
+            alive = false
+            conn?.disconnect() // unblocks a read
+            thread?.interrupt() // cuts a backoff or poll sleep short
+        }
+
+        fun sleep(ms: Long) = try { Thread.sleep(ms); alive } catch (_: InterruptedException) { false }
+    }
+    private var link: Link? = null
 
     private var led: Logic.Led? = null
     private var wakeUntil: Instant = Instant.EPOCH
-    private var alerted = mutableSetOf<String>()
     private var wasScheduled: Boolean? = null
-    private var screenOffAt: Instant? = null
 
     // Wave-to-wake: the proximity sensor is only watched while the screen is
     // off by schedule, and only if the setting is on.
@@ -87,6 +101,7 @@ class StreamService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
+        Crash.install(this)
         nm = getSystemService(NotificationManager::class.java)
         createChannels()
         startForeground(ID_SERVICE, Notification.Builder(this, CH_SERVICE).setSmallIcon(R.drawable.ic_scouter).setContentTitle("Scouter").setOngoing(true).build())
@@ -119,15 +134,15 @@ class StreamService : Service() {
     private fun restartStream() {
         stopStream()
         if (!prefs.configured) return
-        running = true
-        thread = Thread(::streamLoop, "scouter-stream").also { it.start() }
+        val l = Link()
+        link = l
+        l.thread = Thread({ streamLoop(l) }, "scouter-stream").also { it.start() }
     }
 
+    /** Retires the current link without waiting for its thread: it exits by itself. */
     private fun stopStream() {
-        running = false
-        conn?.disconnect() // unblocks the reader
-        thread?.join(2000)
-        thread = null
+        link?.stop()
+        link = null
     }
 
     /**
@@ -135,38 +150,38 @@ class StreamService : Service() {
      * within [FIRST_STATE_MS] (a buffering proxy holds it back), it falls back
      * to polling /v1/state for [POLL_FOR_MS], then tries the stream again.
      */
-    private fun streamLoop() {
-        var backoff = 2_000L
+    private fun streamLoop(link: Link) {
+        var backoff = Logic.BACKOFF_MIN_MS
         var pollUntil = 0L
         var etag: String? = null
-        while (running) {
+        while (link.alive) {
             val now = System.currentTimeMillis()
             if (now < pollUntil) {
                 Hub.postPolling(true)
-                etag = runCatching { pollOnce(etag) }.getOrElse { Hub.postConnected(false); etag }
-                if (!sleep(POLL_EVERY_MS)) break
+                etag = runCatching { pollOnce(link, etag) }.getOrElse { Hub.postConnected(false); etag }
+                if (!link.sleep(POLL_EVERY_MS)) break
                 continue
             }
             Hub.postPolling(false)
-            val outcome = runCatching { readStream() }.getOrDefault(StreamOutcome.FAILED)
+            val outcome = runCatching { readStream(link) }.getOrDefault(StreamOutcome.FAILED)
+            if (!link.alive) break // retired while connected: don't touch shared state
             when (Logic.afterStream(outcome)) {
                 Logic.Next.POLL -> pollUntil = System.currentTimeMillis() + POLL_FOR_MS
-                Logic.Next.RECONNECT_NOW -> backoff = 2_000L
+                Logic.Next.RECONNECT_NOW -> {}
                 Logic.Next.BACK_OFF -> {
                     Hub.postConnected(false)
-                    if (!sleep(backoff)) break
-                    backoff = (backoff * 2).coerceAtMost(60_000L)
+                    if (!link.sleep(backoff)) break
                 }
             }
+            backoff = Logic.nextBackoff(backoff, outcome)
         }
     }
 
-    private fun sleep(ms: Long) = try { Thread.sleep(ms); running } catch (_: InterruptedException) { false }
-
     /** One GET /v1/state; returns the ETag to send next time. */
-    private fun pollOnce(etag: String?): String? {
+    private fun pollOnce(link: Link, etag: String?): String? {
         val c = URL(prefs.url + "/v1/state").openConnection() as HttpURLConnection
-        conn = c
+        link.conn = c
+        if (!link.alive) return etag // stopped before it could see this connection
         try {
             c.connectTimeout = 10_000
             c.readTimeout = 20_000
@@ -182,7 +197,7 @@ class StreamService : Service() {
             }
         } finally {
             c.disconnect()
-            conn = null
+            link.conn = null
         }
     }
 
@@ -191,9 +206,11 @@ class StreamService : Service() {
      * data line, and pings. A watchdog cuts the connection when no state
      * arrives in time; "connected" means data arrived, not just a 200.
      */
-    private fun readStream(): StreamOutcome {
+    private fun readStream(link: Link): StreamOutcome {
         val c = URL(prefs.url + "/v1/stream").openConnection() as HttpURLConnection
-        conn = c
+        link.conn = c
+        // Both fields are volatile: either stop() sees this connection, or we see it stopped.
+        if (!link.alive) return StreamOutcome.FAILED
         c.connectTimeout = 10_000
         c.readTimeout = 70_000 // heartbeat is 25 s; two missed means the link is dead
         c.setRequestProperty("Authorization", "Bearer " + prefs.token)
@@ -205,32 +222,26 @@ class StreamService : Service() {
         try {
             if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
             main.postDelayed(watchdog, FIRST_STATE_MS)
-            val data = StringBuilder()
+            val sse = Logic.Sse()
             BufferedReader(InputStreamReader(c.inputStream, Charsets.UTF_8)).use { r ->
-                while (running) {
+                while (link.alive) {
                     val line = r.readLine() ?: break
-                    when {
-                        line.startsWith("data:") -> data.append(line.substring(5).trimStart())
-                        line.isEmpty() && data.isNotEmpty() -> {
-                            gotState.set(true)
-                            Hub.postState(Parser.parse(data.toString()))
-                            data.clear()
-                        }
-                    }
+                    val event = sse.feed(line) ?: continue
+                    // Parsed first: a document that cannot be read is a
+                    // failure (back off), not a working stream (reconnect now).
+                    Hub.postState(Parser.parse(event))
+                    gotState.set(true)
                 }
             }
-        } catch (e: Exception) {
-            if (!starved.get()) throw e
+        } catch (_: Exception) {
+            // A drop after data is routine (network blip, deploy): the
+            // outcome below says how far the attempt got.
         } finally {
             main.removeCallbacks(watchdog)
             c.disconnect()
-            conn = null
+            link.conn = null
         }
-        return when {
-            starved.get() -> StreamOutcome.STARVED
-            gotState.get() -> StreamOutcome.ENDED_AFTER_DATA
-            else -> StreamOutcome.FAILED
-        }
+        return Logic.streamOutcome(gotState.get(), starved.get())
     }
 
     // ---- screen + LED --------------------------------------------------------
@@ -247,12 +258,15 @@ class StreamService : Service() {
         val now = Instant.now()
         val s = Hub.state
         val dismissed = prefs.dismissed
+        // Kept in prefs: after a crash or an update, alerts that already woke
+        // the screen must not wake it again.
+        val alerted = prefs.alerted
         val fresh = s?.let { Logic.openAlerts(it, dismissed) }.orEmpty().filter { it.id !in alerted }
-        if (fresh.isNotEmpty()) {
-            alerted.addAll(fresh.map { it.id })
-            wakeUntil = now.plusSeconds(ALERT_WAKE_S)
+        if (fresh.isNotEmpty()) wakeUntil = now.plusSeconds(ALERT_WAKE_S)
+        if (s != null) {
+            val keep = (alerted + fresh.map { it.id }).intersect(s.alerts.map { it.id }.toSet())
+            if (keep != alerted) prefs.alerted = keep
         }
-        s?.let { st -> alerted.retainAll(st.alerts.map { it.id }.toSet()) }
         // Everything dismissed: an alert-woken screen may go dark again now.
         if (s != null && Logic.openAlerts(s, dismissed).isEmpty()) wakeUntil = Instant.EPOCH
 
@@ -265,10 +279,10 @@ class StreamService : Service() {
         // fallback can say "off" and the first document "on", which is not a morning.
         if (s != null && s.hasSettings) {
             if (scheduled && wasScheduled == false && s.settings.briefing) {
-                Hub.briefingSince = screenOffAt
+                Hub.briefingSince = prefs.screenOffAt
                 Hub.briefingUntil = now.plusSeconds(BRIEFING_S)
             }
-            if (!scheduled && wasScheduled == true) screenOffAt = now
+            if (!scheduled && wasScheduled == true) prefs.screenOffAt = now
             wasScheduled = scheduled
         }
         watchWave(!scheduled && s?.settings?.wave != false)

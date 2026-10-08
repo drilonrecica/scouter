@@ -265,4 +265,55 @@ class LogicTest {
         assertEquals(listOf("ci_recovered"), Logic.briefing(s, Instant.parse("2026-10-07T05:00:00Z")).map { it.kind })
         assertEquals(2, Logic.briefing(s, null).size)
     }
+
+    @Test
+    fun oneUnreadableItemDoesNotRejectTheDocument() {
+        val s = Parser.parse(
+            """{"version":3,"schema":1,"projects":[{"name":"a","full_name":"me/a"},{"full_name":"me/nameless"},null,
+               {"name":"b","full_name":"me/b"}],"alerts":[{"kind":"ci_failed"},{"id":"x","kind":"ci_failed"}],
+               "history":{"me/a":[9000,null,4500],"me/b":null},"sources":{"github":null,"coolify":{"ok":true}}}""",
+        )
+        assertEquals(listOf("me/a", "me/b"), s.projects.map { it.fullName })
+        assertEquals(listOf("x"), s.alerts.map { it.id })
+        assertEquals(listOf(9000, -1, 4500), s.history.getValue("me/a"))
+        assertEquals(setOf("coolify"), s.sources.keys)
+    }
+
+    @Test
+    fun newerSchemaIsNoticed() {
+        assertEquals(Parser.SCHEMA, Parser.parse("""{"version":1}""").schema) // older servers send none
+        assertTrue(Parser.parse("""{"version":1,"schema":${Parser.SCHEMA + 1}}""").schema > Parser.SCHEMA)
+    }
+
+    @Test
+    fun savingSettingsKeepsFieldsOnlyTheServerKnows() {
+        val server = """{"hidden":[],"favorites":["me/a"],"quiet_weekends":true,"schedule":{"days":"1-5","on":"09:00","off":"19:00","tz":"Europe/Berlin"}}"""
+        val s = Parser.parse("""{"version":1,"settings":$server}""")
+        val saved = org.json.JSONObject(s.settings.copy(kiosk = true).toJson(s.settingsJson))
+        assertTrue(saved.getBoolean("kiosk"))
+        assertTrue("unknown top-level field lost", saved.getBoolean("quiet_weekends"))
+        assertEquals("unknown nested field lost", "Europe/Berlin", saved.getJSONObject("schedule").getString("tz"))
+        assertEquals("me/a", saved.getJSONArray("favorites").getString(0))
+    }
+
+    @Test
+    fun sseCollectsDataLinesAndSkipsPings() {
+        val sse = Logic.Sse()
+        val got = listOf(": ping", "", "id: 7", "event: state", "data: {\"a\":", "data: 1}", "", "", ": ping", "")
+            .mapNotNull(sse::feed)
+        assertEquals(listOf("{\"a\":\n1}"), got)
+    }
+
+    @Test
+    fun aDropAfterDataIsRoutineAndResetsTheBackoff() {
+        // A Wi-Fi blip mid-stream: data arrived, then the read threw.
+        assertEquals(StreamOutcome.ENDED_AFTER_DATA, Logic.streamOutcome(gotState = true, starved = false))
+        assertEquals(StreamOutcome.STARVED, Logic.streamOutcome(gotState = false, starved = true))
+        assertEquals(StreamOutcome.FAILED, Logic.streamOutcome(gotState = false, starved = false))
+
+        var b = Logic.BACKOFF_MIN_MS
+        repeat(10) { b = Logic.nextBackoff(b, StreamOutcome.FAILED) }
+        assertEquals(Logic.BACKOFF_MAX_MS, b)
+        assertEquals(Logic.BACKOFF_MIN_MS, Logic.nextBackoff(b, StreamOutcome.ENDED_AFTER_DATA))
+    }
 }

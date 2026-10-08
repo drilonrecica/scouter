@@ -10,6 +10,7 @@ import android.os.SystemClock
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
 
 /** The phone's minute-by-minute report, so the server notices a dead or overheating phone. */
 object Heartbeat {
@@ -34,6 +35,7 @@ object Heartbeat {
             .put("device_owner", Kiosk.isOwner(ctx))
             .put("lock_task", Kiosk.isLocked(ctx))
             .put("last_ota", prefs.otaResult)
+            .put("last_crash", prefs.lastCrash)
         val c = URL(prefs.url + "/v1/heartbeat").openConnection() as HttpURLConnection
         try {
             c.requestMethod = "POST"
@@ -46,6 +48,25 @@ object Heartbeat {
             c.responseCode // 404 from an older server is fine: nothing to do
         } finally {
             c.disconnect()
+        }
+    }
+}
+
+/**
+ * Records an uncaught exception for the heartbeat, then hands it to Android
+ * as before, which ends the process; START_STICKY brings the service back.
+ */
+object Crash {
+    @Volatile private var installed = false
+
+    fun install(ctx: Context) {
+        if (installed) return
+        installed = true
+        val app = ctx.applicationContext
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching { Prefs(app).lastCrash = "${Instant.now()} [${t.name}] ${e.stackTraceToString().take(2000)}" }
+            previous?.uncaughtException(t, e)
         }
     }
 }

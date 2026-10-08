@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.animation.ValueAnimator
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -22,7 +23,7 @@ import kotlin.random.Random
 /**
  * Full-screen kiosk; configuration arrives through [ConfigReceiver], never
  * through this exported activity's intent.
- * Swipe left/right: Focus ⇄ Grid. Long-press the top strip: settings. Long-press elsewhere
+ * Swipe left/right: Focus ⇄ Grid ⇄ Agents. Long-press the top strip: settings. Long-press elsewhere
  * in Focus: pin/unpin. Tap in Focus: next project. Tap a tile: pin it. Drag the Grid up/down: scroll. Tap an alert: dismiss.
  */
 class DashboardActivity : Activity() {
@@ -94,6 +95,7 @@ class DashboardActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Crash.install(this)
         prefs = Prefs(this)
         setShowWhenLocked(true)
         setTurnScreenOn(true)
@@ -162,9 +164,17 @@ class DashboardActivity : Activity() {
     }
 
     private fun immersive() {
-        window.insetsController?.let {
-            it.hide(WindowInsets.Type.systemBars())
-            it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.let {
+                it.hide(WindowInsets.Type.systemBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else { // Android 9 and 10
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         }
     }
 

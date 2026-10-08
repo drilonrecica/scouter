@@ -1,5 +1,7 @@
 package dev.recica.scouter
 
+import android.annotation.SuppressLint
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -88,15 +90,33 @@ class Prefs(ctx: Context) {
         get() = p.getString("schedule", "1-5 09:00-19:00")!!
         set(v) = p.edit().putString("schedule", v).apply()
     /** Hash of the last APK this phone tried to install over the air. */
-    var otaTried: String
+    val otaTried: String
         get() = p.getString("ota_tried", "")!!
-        set(v) = p.edit().putString("ota_tried", v).apply()
+
+    /** Written with commit(), not apply(): the install that follows may end the process. */
+    @SuppressLint("ApplySharedPref")
+    fun markOtaTried(sha256: String) {
+        p.edit().putString("ota_tried", sha256).commit()
+    }
     var otaResult: String
         get() = p.getString("ota_result", "")!!
         set(v) = p.edit().putString("ota_result", v).apply()
     var dismissed: Set<String>
         get() = p.getStringSet("dismissed", emptySet())!!
         set(v) = p.edit().putStringSet("dismissed", v).apply()
+    /** Alerts that already woke the screen, so a restart does not wake it for them again. */
+    var alerted: Set<String>
+        get() = p.getStringSet("alerted", emptySet())!!
+        set(v) = p.edit().putStringSet("alerted", v).apply()
+    /** When the schedule last turned the screen off: the morning briefing covers from there. */
+    var screenOffAt: Instant?
+        get() = p.getLong("screen_off_at", 0L).takeIf { it > 0 }?.let(Instant::ofEpochMilli)
+        set(v) = p.edit().putLong("screen_off_at", v?.toEpochMilli() ?: 0L).apply()
+    /** The last uncaught exception, reported with every heartbeat. */
+    var lastCrash: String
+        get() = p.getString("last_crash", "")!!
+        @SuppressLint("ApplySharedPref") // the process is about to die: apply() would be lost
+        set(v) { p.edit().putString("last_crash", v).commit() }
 
     val configured get() = url.isNotEmpty() && token.isNotEmpty()
 }

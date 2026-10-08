@@ -25,6 +25,10 @@ data class DashState(
     val agents: List<Agent> = emptyList(),
     /** What happened in the last 24 h, oldest first (morning briefing). */
     val events: List<Event> = emptyList(),
+    /** Document format; above [Parser.SCHEMA] this app is too old to read it all. */
+    val schema: Int = Parser.SCHEMA,
+    /** The server's settings object as sent, so a save keeps fields this app does not know. */
+    val settingsJson: String? = null,
 )
 
 data class Agent(val id: String, val project: String, val state: String, val since: Instant?)
@@ -36,7 +40,8 @@ data class AppRelease(val sha256: String, val size: Long)
 /**
  * Mirrors aggregator/internal/state/settings.go. The server owns it; the
  * phone edits by sending the whole object back (PUT /v1/settings), so every
- * field must round-trip through [toJson].
+ * field must round-trip through [toJson], and fields only a newer server
+ * knows are carried over from its own copy ([toJson]'s base).
  */
 data class Settings(
     val hidden: List<String> = emptyList(),
@@ -57,19 +62,24 @@ data class Settings(
     val wave: Boolean = true,
     val briefing: Boolean = true,
 ) {
-    fun toJson(): String = JSONObject()
-        .put("hidden", JSONArray(hidden))
-        .put("favorites", JSONArray(favorites))
-        .put("focus_mode", focusMode)
-        .put("pinned", pinned)
-        .put("rotate_minutes", rotateMinutes)
-        .put("schedule", JSONObject().put("days", days).put("on", on).put("off", off))
-        .put("kiosk", kiosk)
-        .put("background", JSONObject().put("aura", aura).put("stars", stars).put("mesh", mesh).put("stage", stage).put("weather", weather))
-        .put("alert_hours", alertHours)
-        .put("wave", wave)
-        .put("briefing", briefing)
-        .toString()
+    /** This object as JSON, written over [base] (the server's last copy) so unknown fields survive. */
+    fun toJson(base: String? = null): String {
+        val o = base?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
+        fun nested(key: String) = o.optJSONObject(key) ?: JSONObject()
+        return o
+            .put("hidden", JSONArray(hidden))
+            .put("favorites", JSONArray(favorites))
+            .put("focus_mode", focusMode)
+            .put("pinned", pinned)
+            .put("rotate_minutes", rotateMinutes)
+            .put("schedule", nested("schedule").put("days", days).put("on", on).put("off", off))
+            .put("kiosk", kiosk)
+            .put("background", nested("background").put("aura", aura).put("stars", stars).put("mesh", mesh).put("stage", stage).put("weather", weather))
+            .put("alert_hours", alertHours)
+            .put("wave", wave)
+            .put("briefing", briefing)
+            .toString()
+    }
 
     companion object {
         fun parse(o: JSONObject?): Settings {
@@ -98,7 +108,7 @@ data class Settings(
             )
         }
 
-        fun strings(a: JSONArray?): List<String> = a?.let { List(it.length()) { i -> it.getString(i) } }.orEmpty()
+        fun strings(a: JSONArray?): List<String> = a?.let { List(it.length()) { i -> it.optString(i) }.filter(String::isNotEmpty) }.orEmpty()
     }
 }
 
@@ -150,18 +160,23 @@ data class Alert(val id: String, val kind: String, val project: String, val text
 data class Source(val ok: Boolean, val error: String)
 
 object Parser {
+    /** The document format this app understands (aggregator: state.Schema). */
+    const val SCHEMA = 1
+
+    /**
+     * Reads the state document. Only a document that is not JSON at all
+     * fails: an item the app cannot read (a project without a name, say) is
+     * skipped, so one odd entry never blanks the whole dashboard.
+     */
     fun parse(json: String): DashState {
         val o = JSONObject(json)
-        val projects = o.optJSONArray("projects")?.let { a -> List(a.length()) { project(a.getJSONObject(it)) } }.orEmpty()
-        val alerts = o.optJSONArray("alerts")?.let { a ->
-            List(a.length()) {
-                val x = a.getJSONObject(it)
-                Alert(x.getString("id"), x.optString("kind"), x.optString("project"), x.optString("text"), instant(x, "at"))
-            }
-        }.orEmpty()
+        val projects = items(o.optJSONArray("projects"), ::project)
+        val alerts = items(o.optJSONArray("alerts")) { x ->
+            Alert(x.getString("id"), x.optString("kind"), x.optString("project"), x.optString("text"), instant(x, "at"))
+        }
         val sources = buildMap {
             o.optJSONObject("sources")?.let { s ->
-                for (k in s.keys()) put(k, s.getJSONObject(k).let { Source(it.optBoolean("ok"), it.optString("error")) })
+                for (k in s.keys()) s.optJSONObject(k)?.let { put(k, Source(it.optBoolean("ok"), it.optString("error"))) }
             }
         }
         return DashState(
@@ -169,17 +184,19 @@ object Parser {
             Settings.parse(o.optJSONObject("settings")), Settings.strings(o.optJSONArray("available")),
             hasSettings = o.has("settings"),
             history = o.optJSONObject("history")?.let { h ->
-                h.keys().asSequence().associateWith { k -> h.getJSONArray(k).let { a -> List(a.length()) { a.getInt(it) } } }
+                h.keys().asSequence().mapNotNull { k -> h.optJSONArray(k)?.let { a -> k to List(a.length()) { a.optInt(it, -1) } } }.toMap()
             }.orEmpty(),
-            agents = o.optJSONArray("agents")?.let { a ->
-                List(a.length()) { a.getJSONObject(it).let { x -> Agent(x.optString("id"), x.optString("project"), x.optString("state"), instant(x, "since")) } }
-            }.orEmpty(),
-            events = o.optJSONArray("events")?.let { a ->
-                List(a.length()) { a.getJSONObject(it).let { x -> Event(instant(x, "at"), x.optString("project"), x.optString("kind"), x.optString("text")) } }
-            }.orEmpty(),
+            agents = items(o.optJSONArray("agents")) { x -> Agent(x.optString("id"), x.optString("project"), x.optString("state"), instant(x, "since")) },
+            events = items(o.optJSONArray("events")) { x -> Event(instant(x, "at"), x.optString("project"), x.optString("kind"), x.optString("text")) },
             app = o.optJSONObject("app")?.let { AppRelease(it.optString("sha256"), it.optLong("size")) }?.takeIf { it.sha256.length == 64 },
+            schema = o.optInt("schema", SCHEMA),
+            settingsJson = o.optJSONObject("settings")?.toString(),
         )
     }
+
+    /** Every object in [a] that [read] accepts; anything else is skipped. */
+    private fun <T> items(a: JSONArray?, read: (JSONObject) -> T): List<T> =
+        a?.let { List(it.length()) { i -> it.optJSONObject(i)?.let { x -> runCatching { read(x) }.getOrNull() } }.filterNotNull() }.orEmpty()
 
     private val ICON_HASH = Regex("[0-9a-f]{16}")
 

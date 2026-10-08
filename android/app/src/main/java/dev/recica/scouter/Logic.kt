@@ -57,6 +57,47 @@ object Logic {
         StreamOutcome.FAILED -> Next.BACK_OFF
     }
 
+    /**
+     * How a stream attempt ended. Any state delivered means the stream
+     * worked, whatever cut it off later; otherwise the watchdog tells a
+     * buffering proxy (starved) from a failure.
+     */
+    fun streamOutcome(gotState: Boolean, starved: Boolean): StreamOutcome = when {
+        gotState -> StreamOutcome.ENDED_AFTER_DATA
+        starved -> StreamOutcome.STARVED
+        else -> StreamOutcome.FAILED
+    }
+
+    const val BACKOFF_MIN_MS = 2_000L
+    const val BACKOFF_MAX_MS = 60_000L
+
+    /** The wait before the next failed attempt is retried: doubles while failing, resets once the stream works. */
+    fun nextBackoff(current: Long, o: StreamOutcome): Long = when (o) {
+        StreamOutcome.ENDED_AFTER_DATA -> BACKOFF_MIN_MS
+        StreamOutcome.FAILED -> (current * 2).coerceAtMost(BACKOFF_MAX_MS)
+        StreamOutcome.STARVED -> current
+    }
+
+    /**
+     * Server-sent events, line by line: `data:` lines collect until a blank
+     * line ends the event; comments (`: ping`) and other fields are ignored.
+     */
+    class Sse {
+        private val data = StringBuilder()
+
+        /** Feeds one line; returns the event's data when [line] completes one. */
+        fun feed(line: String): String? {
+            when {
+                line.startsWith("data:") -> {
+                    if (data.isNotEmpty()) data.append('\n')
+                    data.append(line.substring(5).removePrefix(" "))
+                }
+                line.isEmpty() && data.isNotEmpty() -> return data.toString().also { data.clear() }
+            }
+            return null
+        }
+    }
+
     fun status(p: Project): Status = p.ci?.status ?: Status.NONE
 
     /**
