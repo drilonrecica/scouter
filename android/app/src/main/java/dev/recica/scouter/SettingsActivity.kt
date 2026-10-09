@@ -6,7 +6,9 @@ import android.app.TimePickerDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -53,6 +55,12 @@ class SettingsActivity : Activity() {
         }
         setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(body) })
         build(s)
+    }
+
+    @Deprecated("Deprecated in Java") // the result API needs androidx, which this app avoids
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == DOZE_REQUEST) Hub.state?.let { build(it) } // show the new state
     }
 
     private fun px(dp: Int) = (dp * d).toInt()
@@ -116,6 +124,20 @@ class SettingsActivity : Activity() {
         val host = runCatching { Uri.parse(Prefs(this).url).host }.getOrNull() ?: "—"
         hint("Server: $host · ${if (Hub.connected) "connected" else "no signal"} · document v${s.version} · app ${packageManager.getPackageInfo(packageName, 0).versionName}")
         hint("Server and token can only be changed over adb.")
+        // Doze ignores the service's wake lock: overnight the schedule tick
+        // stalls and the screen comes on late, or not until someone touches it.
+        if (getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)) {
+            hint("Battery optimization: off, the schedule runs on time overnight.")
+        } else {
+            hint("Battery optimization is on: overnight the phone can sleep through the time the screen should turn on.")
+            body.addView(button("TURN OFF BATTERY OPTIMIZATION", primary = false) {
+                @Suppress("BatteryLife") // a wall display, not a phone in a pocket
+                startActivityForResult(
+                    Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")),
+                    DOZE_REQUEST,
+                )
+            })
+        }
 
         section("PROJECTS")
         hint("★ favorites are always tracked, shown first and used by Rotate. Hidden repos are never tracked.")
@@ -271,5 +293,6 @@ class SettingsActivity : Activity() {
         private const val SECONDARY = 0xFF8C8C8C.toInt()
         private const val DIM = 0xFF4A4A4A.toInt()
         private const val STAR = 0xFFFFC94D.toInt()
+        private const val DOZE_REQUEST = 1
     }
 }

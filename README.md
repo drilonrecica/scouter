@@ -157,6 +157,7 @@ adb shell appops set dev.recica.scouter SYSTEM_ALERT_WINDOW allow      # may bri
 adb shell dpm set-active-admin dev.recica.scouter/.AdminReceiver       # may switch the screen off
 adb shell settings put global stay_on_while_plugged_in 0            # the app keeps the screen on itself
 adb shell locksettings set-disabled true                            # no lock screen in front of alerts
+adb shell dumpsys deviceidle whitelist +dev.recica.scouter          # Doze would stall the schedule overnight
 
 # configure (quote the schedule: it contains a space)
 adb shell "am broadcast -n dev.recica.scouter/.ConfigReceiver --es url https://scouter.example.com --es token SECRET --es schedule '1-5 09:00-19:00'"

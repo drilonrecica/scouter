@@ -8,6 +8,8 @@
     <!-- Granted over adb (appops); lets the service bring the dashboard forward to show an alert. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Lets the settings screen ask to leave Doze, which would stall the schedule tick overnight. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Over-the-air updates via PackageInstaller; silent because the app is device owner. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
