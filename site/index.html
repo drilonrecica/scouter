@@ -162,9 +162,8 @@ cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make ru
       </li>
       <li>
         <h3>Install and configure the phone</h3>
-        <p>Configuration is only accepted over adb, so no other app on the phone can point it at a server of its own and collect the token.</p>
-        <pre><code>cd android && ./gradlew :app:assembleRelease
-adb install -r app/build/outputs/apk/release/app-release.apk
+        <p>Download the APK from <a href="https://github.com/drilonrecica/scouter/releases/latest">the latest release</a> (debug-signed; details in <a href="https://github.com/drilonrecica/scouter/blob/master/docs/INSTALL.md">docs/INSTALL.md</a>) or build it with <code>cd android && ./gradlew :app:assembleRelease</code>. Configuration is only accepted over adb, so no other app on the phone can point it at a server of its own and collect the token.</p>
+        <pre><code>adb install -r scouter-app_&lt;version&gt;_debug-signed.apk
 adb shell appops set dev.recica.scouter SYSTEM_ALERT_WINDOW allow
 adb shell dpm set-active-admin dev.recica.scouter/.AdminReceiver
 adb shell "am broadcast -n dev.recica.scouter/.ConfigReceiver \

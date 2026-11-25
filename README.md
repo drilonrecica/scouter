@@ -13,9 +13,83 @@
 
 <p align="center"><strong><a href="https://drilonrecica.github.io/scouter/">drilonrecica.github.io/scouter</a></strong>: what it is, how it looks, how to set it up.</p>
 
-A retired Samsung Galaxy S3 Neo sits on the desk
-and shows the CI status of your most active GitHub repos on its AMOLED
-screen, with the RGB notification LED as a build light.
+## What you get
+
+![Scouter on a Pixel 3 on my desk](docs/images/phone.jpg)
+
+A retired Android phone on the desk that shows the CI status of your most
+active GitHub repos, all day, on a black HUD: one project large, a grid of
+the rest, a power level for build health, and the notification LED as a
+build light (red = something just broke, amber = building, green = quiet).
+Two small parts, no dependencies in either: a Go **aggregator** that polls
+GitHub and streams one JSON document, and a Kotlin **phone app** that draws
+it. Both come from the [Releases](https://github.com/drilonrecica/scouter/releases)
+page as a binary and an APK.
+
+**Contents:** [Quick start](#quick-start) · [What the phone shows](#what-the-phone-shows) · [Design](#design) · [Settings](#settings) · [Aggregator](#aggregator) · [Phone](#phone) · [Changelog](CHANGELOG.md)
+
+## Quick start
+
+Four steps, about ten minutes. The long form, with every adb step and the
+signing details, is [`docs/INSTALL.md`](docs/INSTALL.md).
+
+**1. Run the aggregator** somewhere the phone can reach over HTTPS (a VPS
+behind a reverse proxy, Coolify, or your laptop for a first try):
+
+```sh
+# download scouter-aggregator_<version>_<os>_<arch>.tar.gz from Releases, then
+tar xzf scouter-aggregator_*.tar.gz && cd scouter-aggregator_*/
+cp example.env scouter.env            # fill in SCOUTER_TOKEN and SCOUTER_GITHUB_TOKEN
+set -a; . ./scouter.env; set +a
+SCOUTER_DATA_DIR=./data ./scouter-aggregator
+curl -s localhost:8080/healthz        # ok <version>
+```
+
+`SCOUTER_TOKEN` is any long random string (`openssl rand -hex 24`);
+`SCOUTER_GITHUB_TOKEN` a fine-grained PAT with read-only *Actions*,
+*Contents*, *Pull requests* and *Metadata* on the repos to watch. The rest of
+[`example.env`](aggregator/example.env) is optional. For Coolify or Docker,
+see [Aggregator](#aggregator).
+
+**2. Install the app** on an Android 9+ phone with USB debugging on:
+
+```sh
+# download scouter-app_<version>_debug-signed.apk from Releases, then
+adb install -r scouter-app_*_debug-signed.apk
+```
+
+The APK on the Releases page is a release build signed with the CI runner's
+throwaway debug key: fine for sideloading, but each release carries a new
+key, so updating from one downloaded release to the next means `adb
+uninstall dev.recica.scouter` first. Build it yourself or set the keystore
+secrets to get in-place updates: [Signing](docs/INSTALL.md#signing).
+
+**3. Let it run the screen** (one time; each line is explained in
+[`docs/INSTALL.md`](docs/INSTALL.md#3-one-time-setup-adb)):
+
+```sh
+adb shell dpm set-active-admin dev.recica.scouter/.AdminReceiver
+adb shell appops set dev.recica.scouter SYSTEM_ALERT_WINDOW allow
+adb shell dumpsys deviceidle whitelist +dev.recica.scouter
+adb shell settings put global stay_on_while_plugged_in 0
+adb shell locksettings set-disabled true
+```
+
+**4. Point it at the aggregator** (configuration is only accepted over adb):
+
+```sh
+adb shell "am broadcast -n dev.recica.scouter/.ConfigReceiver --es url https://scouter.example.com --es token SECRET --es schedule '1-5 09:00-19:00'"
+adb shell am start -n dev.recica.scouter/.DashboardActivity
+```
+
+Put the phone on a stand on USB power. Long-press the top strip for
+settings; favorites, hidden repos and the screen schedule live in the
+aggregator and reach the phone within seconds.
+
+## How it works
+
+Built for a retired Samsung Galaxy S3 Neo (AMOLED, RGB notification LED);
+any Android 9+ phone runs it, see [Other phones?](#other-phones).
 
 ```
 GitHub API ──► aggregator (Go, on Coolify) ──SSE──► phone app (Kotlin)
@@ -142,26 +216,30 @@ or rate limit does not count). The commit comes from Coolify's
 `SOURCE_COMMIT` build argument (enable *Include Source Commit in Build*)
 and also shows on the admin status page.
 
-Local run: `cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make run`
+**Binary:** each [release](https://github.com/drilonrecica/scouter/releases)
+has `scouter-aggregator_<version>_<os>_<arch>.tar.gz` for linux and darwin,
+amd64 and arm64 (static, no dependencies), with `example.env` inside, and
+`checksums.txt` (`sha256sum -c --ignore-missing checksums.txt`). Run it
+under systemd or any supervisor with the env vars above and a writable
+`SCOUTER_DATA_DIR`, behind a reverse proxy that terminates TLS and does not
+buffer `/v1/stream` (`proxy_buffering off` in nginx; Caddy needs nothing).
+
+**Docker:** `docker build -t scouter-aggregator aggregator/` then
+`docker run -d -p 8080:8080 -v scouter-data:/data --env-file scouter.env scouter-aggregator`
+(distroless, runs as nonroot, checks its own health).
+
+Local run from source: `cd aggregator && SCOUTER_TOKEN=dev SCOUTER_GITHUB_TOKEN=$(gh auth token) make run`
 
 ## Phone
 
 Built against the S3 Neo running LineageOS 19.1 (userdebug, so `adb root` works).
+Install, one-time adb setup and configuration are in the
+[Quick start](#quick-start) and, step by step, in
+[`docs/INSTALL.md`](docs/INSTALL.md). From source:
 
 ```sh
-cd android && ./gradlew :app:assembleRelease      # needs a JDK with javac (17+)
+cd android && ./gradlew :app:assembleRelease      # needs a JDK with javac (17+) and the Android SDK
 adb install -r app/build/outputs/apk/release/app-release.apk
-
-# one-time setup
-adb shell appops set dev.recica.scouter SYSTEM_ALERT_WINDOW allow      # may bring itself forward for alerts
-adb shell dpm set-active-admin dev.recica.scouter/.AdminReceiver       # may switch the screen off
-adb shell settings put global stay_on_while_plugged_in 0            # the app keeps the screen on itself
-adb shell locksettings set-disabled true                            # no lock screen in front of alerts
-adb shell dumpsys deviceidle whitelist +dev.recica.scouter          # Doze would stall the schedule overnight
-
-# configure (quote the schedule: it contains a space)
-adb shell "am broadcast -n dev.recica.scouter/.ConfigReceiver --es url https://scouter.example.com --es token SECRET --es schedule '1-5 09:00-19:00'"
-adb shell am start -n dev.recica.scouter/.DashboardActivity
 ```
 
 Configuration is accepted only from adb: the receiver requires
@@ -172,6 +250,16 @@ for `127.0.0.1`/`localhost`; everything else must be HTTPS.
 
 For development against a local aggregator: `adb reverse tcp:8787 tcp:8787`
 and configure `--es url http://127.0.0.1:8787` (with its token).
+
+**Signing.** A local build is signed with your machine's debug key
+(`~/.android/debug.keystore`) unless `SCOUTER_KEYSTORE_FILE`,
+`SCOUTER_KEYSTORE_PASSWORD`, `SCOUTER_KEY_ALIAS` and `SCOUTER_KEY_PASSWORD`
+name another keystore. The APK on the Releases page is built the same way on
+a CI runner, so it is **debug-signed with a key that exists only for that
+run**; it installs fine but does not update an earlier release in place.
+Adding those four values as repository secrets (the keystore as
+`SCOUTER_KEYSTORE_BASE64`) makes the release workflow sign with your key
+instead. Details: [Signing](docs/INSTALL.md#signing).
 
 ### Kiosk mode
 
@@ -210,8 +298,8 @@ tags it `v<version>` and waits until the phone reports the new version. It
 refuses to run with uncommitted changes under `android/`, so each tag is
 exactly the code on the phone. Push the tags with `git push --follow-tags`.
 
-**Back up the signing key.** Releases are signed with the build machine's
-debug key (`~/.android/debug.keystore`). Android only installs an update
+**Back up the signing key.** Over-the-air releases from `tools/release.sh`
+are signed with the build machine's debug key (`~/.android/debug.keystore`). Android only installs an update
 signed with the same key, so if that file is lost, over-the-air updates stop
 and the app has to be reinstalled over adb (release device ownership first).
 Keep a copy of it somewhere safe.
@@ -238,6 +326,16 @@ The phone is always on USB power. `/system/etc/init/scouter-charge.rc` (source: 
 Samsung's retail *store mode* at boot, which holds the battery at about 60–70%
 instead of 100% (full and warm is what makes old batteries swell). Delete that
 file to restore normal charging.
+
+## Releases
+
+A `v<version>` tag on `master` runs the [release workflow](.github/workflows/release.yml):
+GoReleaser builds the aggregator for linux and darwin, amd64 and arm64, Gradle
+builds the APK, and a GitHub Release gets the archives, the APK and one
+`checksums.txt`, with generated notes. The tag must equal `versionName` in
+`android/app/build.gradle.kts`. Curated notes live in
+[CHANGELOG.md](CHANGELOG.md). Locally, `goreleaser release --snapshot --clean`
+builds the archives into `dist/` without publishing.
 
 ## License
 
