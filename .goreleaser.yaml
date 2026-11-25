@@ -1,0 +1,60 @@
+# GoReleaser config for the aggregator, like igris. The release workflow runs
+# it on a v* tag; `goreleaser release --snapshot --clean` builds into dist/
+# locally without publishing anything.
+version: 2
+
+project_name: scouter
+
+before:
+  hooks:
+    - go -C aggregator mod verify
+
+builds:
+  - id: scouter-aggregator
+    dir: aggregator
+    main: ./cmd/scouter-aggregator
+    binary: scouter-aggregator
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: scouter-aggregator
+    formats: [tar.gz]
+    name_template: "scouter-aggregator_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - src: aggregator/example.env
+        dst: example.env
+
+# One checksums.txt covers the archives and the phone APK, which the
+# release workflow builds in another job and puts under apk/.
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+  extra_files:
+    - glob: apk/*.apk
+
+# Release notes are GitHub's generated notes; CHANGELOG.md has the curated ones.
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: drilonrecica
+    name: scouter
+  extra_files:
+    - glob: apk/*.apk
+  header: |
+    Curated notes: [CHANGELOG.md](https://github.com/drilonrecica/scouter/blob/{{ .Tag }}/CHANGELOG.md).
+    Install: [README](https://github.com/drilonrecica/scouter/blob/{{ .Tag }}/README.md#quick-start).
+  footer: |
+    `checksums.txt` lists the sha256 of every file above, the APK included:
+    `sha256sum -c --ignore-missing checksums.txt`.

@@ -1,3 +1,6 @@
 # Never commit local secrets
 .env
 .env.*
+# GoReleaser output and the APK staged for a release
+dist/
+apk/
