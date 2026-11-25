@@ -9,7 +9,7 @@ so the tags carried no release assets.
 
 ## [Unreleased]
 
-## [0.5.0] - TBD
+## [0.5.0] - 2026-11-25
 
 The first version with downloadable assets: a GitHub Release per tag with the
 aggregator binaries and the phone APK.
