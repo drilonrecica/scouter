@@ -17,12 +17,24 @@ android {
         ndk { abiFilters += "armeabi-v7a" }
     }
 
+    // Sideloaded onto one phone, never on Play: the debug key is fine. Set
+    // SCOUTER_KEYSTORE_FILE (+ _PASSWORD, SCOUTER_KEY_ALIAS, SCOUTER_KEY_PASSWORD)
+    // to sign with another key instead, as the release workflow does when the
+    // keystore secrets exist. Android updates in place only over the same key.
+    val keystoreFile = System.getenv("SCOUTER_KEYSTORE_FILE")
+    if (keystoreFile != null) {
+        signingConfigs.create("env") {
+            storeFile = file(keystoreFile)
+            storePassword = System.getenv("SCOUTER_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("SCOUTER_KEY_ALIAS")
+            keyPassword = System.getenv("SCOUTER_KEY_PASSWORD")
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // Sideloaded onto one phone: the debug key is fine.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (keystoreFile != null) "env" else "debug")
         }
     }
     compileOptions {
